@@ -16,7 +16,8 @@ INDEX_FILE = ROOT / "shot_index.json"
 FRAMES = ROOT / "vision_frames2"
 SHEETS = ROOT / "vision_sheets2"
 MAP_FILE = ROOT / "sheets_map2.json"
-SOURCES = [ROOT / "youtube_videos", ROOT / "pexels_videos", ROOT / "build"]
+SOURCES = [ROOT / "youtube_videos", ROOT / "pexels_videos",
+           ROOT / "build", ROOT / "reference"]
 COLS, ROWS = 4, 5
 
 

@@ -39,21 +39,12 @@ def main():
             got += 1
             continue
         print(f"[*] {name}: {query}")
-        try:
-            subprocess.run(
-                ["yt-dlp", "-f", "best[ext=mp4][height<=720]/best[ext=mp4]",
-                 "--match-filter", "duration<720",
-                 "--no-playlist", "-o", str(out),
-                 f"ytsearch:{query}"],
-                capture_output=True, text=True, timeout=300)
-            if out.exists():
-                print(f"    OK ({out.stat().st_size/1e6:.0f} MB)")
-                got += 1
-            else:
-                print("    failed/filtered")
-                fail += 1
-        except Exception:
-            print("    timeout")
+        from CELEB_VIDEO import download_one
+        if download_one(query, out):
+            print(f"    OK ({out.stat().st_size/1e6:.0f} MB)")
+            got += 1
+        else:
+            print("    FAILED after all retries")
             fail += 1
     print(f"\n[OK] {got} videos ready, {fail} failed")
     print("[->] next: python INDEX_NEW.py")

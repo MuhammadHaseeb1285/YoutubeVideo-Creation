@@ -52,26 +52,13 @@ def download_youtube_videos():
 
         print(f"[*] {name}: Downloading...", end=" ")
 
-        try:
-            cmd = [
-                "yt-dlp",
-                "-f", "best[ext=mp4]",
-                "-o", str(output_file),
-                f"ytsearch:{query}"
-            ]
-
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-
-            if output_file.exists():
-                size_mb = output_file.stat().st_size / (1024 * 1024)
-                print(f"✓ ({size_mb:.1f} MB)")
-                downloaded += 1
-            else:
-                print(f"[Failed]")
-                failed += 1
-
-        except Exception as e:
-            print(f"[Error]")
+        from CELEB_VIDEO import download_one
+        if download_one(query, output_file):
+            size_mb = output_file.stat().st_size / (1024 * 1024)
+            print(f"OK ({size_mb:.1f} MB)")
+            downloaded += 1
+        else:
+            print("[FAILED after all retries]")
             failed += 1
 
     print(f"\n[✓] Downloaded: {downloaded}/11")
