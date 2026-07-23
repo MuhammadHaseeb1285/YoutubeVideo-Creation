@@ -1,0 +1,5 @@
+# Only Python sources (and README) are tracked
+*
+!*.py
+!.gitignore
+!README.md
