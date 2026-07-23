@@ -33,6 +33,9 @@ TRANSCRIPT = ROOT / "transcript.md"
 INDEX_FILE = ROOT / "shot_index.json"     # cached scene cuts per video
 MAP_FILE = ROOT / "sheets_map.json"       # vision cell id -> source/scene
 TAGS_FILE = ROOT / "vision_tags.json"     # cell id -> [cat, gender, use, q]
+MAP_FILE2 = ROOT / "sheets_map2.json"     # appended batch (new downloads)
+TAGS_FILE2 = ROOT / "vision_tags2.json"
+BROLL_SHARE = 0.12                        # target: ~90% Ryan / 10% support
 TIMELINE_FILE = ROOT / "timeline.json"
 FINAL_NAME = "RYAN_REYNOLDS_FINAL.mp4"
 
@@ -67,15 +70,15 @@ PREF = {
     "ryan":      [ALL_RYAN, COACH],
     "deadpool":  [DP, ALL_RYAN],
     "coach":     [COACH, {"ryan_coach_gym"}, ALL_RYAN],
-    "chest":     [EX_CHEST, RYAN_PRIME, EQ],
-    "back":      [EX_BACK, RYAN_PRIME, EQ],
-    "legs":      [EX_LEGS, RYAN_PRIME, EQ],
-    "shoulders": [EX_SHOULD, RYAN_PRIME, EQ],
-    "cardio":    [EX_CARDIO, RYAN_PRIME],
-    "nutrition": [FOOD, EQ, RYAN_TALK],
-    "recovery":  [REC, EQ, RYAN_BODY, RYAN_TALK],
-    "workout":   [ALL_EX, RYAN_PRIME, COACH, EQ],
-    "generic":   [RYAN_BODY, ALL_RYAN, COACH, EQ],
+    "chest":     [RYAN_PRIME | COACH, EX_CHEST, EQ],
+    "back":      [RYAN_PRIME | COACH, EX_BACK, EQ],
+    "legs":      [RYAN_PRIME | COACH, EX_LEGS, EQ],
+    "shoulders": [RYAN_PRIME | COACH, EX_SHOULD, EQ],
+    "cardio":    [RYAN_PRIME | COACH, EX_CARDIO, EQ],
+    "nutrition": [FOOD, RYAN_TALK, EQ],
+    "recovery":  [REC, RYAN_BODY, RYAN_TALK, EQ],
+    "workout":   [RYAN_PRIME, COACH, ALL_EX, EQ],
+    "generic":   [ALL_RYAN, COACH, EQ],
 }
 
 RYAN_POOL = ALL_RYAN | COACH
@@ -151,15 +154,18 @@ def make_voiceover():
 def build_shot_db():
     """Join cached scene cuts with vision classifications."""
     cuts_cache = json.loads(INDEX_FILE.read_text())
-    cells = json.loads(MAP_FILE.read_text())
-    tags = json.loads(TAGS_FILE.read_text())
 
-    # (source, scene) -> [cat, gender, use, q]
+    # (source, scene) -> [cat, gender, use, q]  from every map/tag batch
     scene_tag = {}
-    for c in cells:
-        t = tags.get(str(c["id"]))
-        if t:
-            scene_tag[(c["source"], c["scene"])] = t
+    for mf, tf in ((MAP_FILE, TAGS_FILE), (MAP_FILE2, TAGS_FILE2)):
+        if not (mf.exists() and tf.exists()):
+            continue
+        cells = json.loads(mf.read_text())
+        tags = json.loads(tf.read_text())
+        for c in cells:
+            t = tags.get(str(c["id"]))
+            if t:
+                scene_tag[(c["source"], c["scene"])] = t
 
     shots, dropped = [], 0
     for src_path, meta in cuts_cache.items():
@@ -264,6 +270,11 @@ def build_timeline(sentences, shots):
             s += 60                                 # rotate visual category
         if protect and sh["cat"] in RYAN_POOL:
             s += 600                                # reserved for Ryan talk
+        if sh["cat"] not in RYAN_POOL and slot > 10:
+            broll = sum(1 for e in timeline
+                        if e["cat"] not in RYAN_POOL)
+            if broll / max(1, len(timeline)) > BROLL_SHARE:
+                s += 450          # keep supporting footage near 10%
         s -= 40 * sh["q"]                           # premium footage bonus
         return s
 
