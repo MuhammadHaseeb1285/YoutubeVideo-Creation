@@ -64,19 +64,27 @@ def resolve_script(params) -> tuple:
         logs.log("script: workout & diet documentary (Wikipedia research + "
                  "Claude API, verified, length-filled)")
     except T.NoApiKey:
-        raise RuntimeError(
-            f"A workout & diet documentary about {name} needs a knowledge "
-            f"source for the real training and nutrition. Add a Claude API "
-            f"key in Settings (the app then researches and writes it), OR "
-            f"paste your own script in the Documentary Input tab. Wikipedia "
-            f"only has a biography - not workout/diet data - so a name alone "
-            f"cannot produce a fitness documentary offline.")
-    except T.NoFitnessData:
-        raise RuntimeError(
-            f"{name} has no publicly documented workout or diet, so a "
-            f"fitness documentary can't be built from real sources. Choose a "
-            f"celebrity with a documented fitness/transformation - e.g. an "
-            f"action-movie actor, an athlete, or a fitness creator.")
+        # No key: search public FITNESS publications (Men's Health, Muscle &
+        # Fitness, etc.) for the real workout/diet coverage and build from it.
+        logs.log(f"no API key - searching fitness publications for "
+                 f"{name}'s real workout & diet coverage...")
+        arts = R.fetch_fitness_content(name)
+        if not arts:
+            raise RuntimeError(
+                f"No public workout/diet coverage was found online for "
+                f"{name}. Pick a celebrity with a documented fitness "
+                f"transformation (action-movie actor, athlete, or fitness "
+                f"creator), or paste your own script in Documentary Input.")
+        try:
+            tp, meta = T.generate_from_sources(name, minutes, arts)
+            coach = coach or meta.get("coach", "")
+            logs.log(f"script: built from {len(arts)} public fitness "
+                     f"sources (no API key needed)")
+        except T.NoFitnessData:
+            raise RuntimeError(
+                f"Found articles for {name} but not enough real workout/diet "
+                f"detail to build a fitness documentary. Try a celebrity with "
+                f"a well-documented transformation, or paste your own script.")
 
     logs.metric("subject_type", ctype)
     params["_ctype"] = ctype

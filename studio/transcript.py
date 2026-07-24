@@ -378,6 +378,66 @@ def generate_generic(name: str, minutes: int, typ: str = "public figure"):
     return out
 
 
+_JUNK = ["share", "copy link", "table of content", "facebook", "linkedin",
+         "pinterest", "twitter", "instagram", "subscribe", "cookie",
+         "newsletter", "sign up", "advertisement", "read more",
+         "click here", "updated:", "published:", "getty", "follow us",
+         "terms of", "privacy policy", "affiliate", "©", "all rights",
+         "photo by", "image credit", "shop ", "buy now", "www.", "http"]
+
+
+def generate_from_sources(name: str, minutes: int, sources: list):
+    """Build a fitness-only documentary from scraped public fitness-article
+    text (no API key). Keeps only clean, on-topic training/diet sentences.
+    Raises NoFitnessData if there isn't enough real content."""
+    from . import research as R
+    text = " ".join(s.get("text", "") for s in sources)
+    seen, sents = set(), []
+    for s in re.split(r"(?<=[.!?])\s+", text):
+        s = s.strip()
+        low = s.lower()
+        w = len(s.split())
+        if w < 6 or w > 55:
+            continue
+        if any(j in low for j in _JUNK):
+            continue
+        if not R._is_fitness(s):
+            continue
+        key = low[:50]
+        if key in seen:
+            continue
+        seen.add(key)
+        sents.append(s)
+    if len(sents) < 8:
+        raise NoFitnessData(name)
+
+    titles = ["THE PHYSIQUE", "THE TRAINING APPROACH", "THE WORKOUT SPLIT",
+              "THE EXERCISES", "THE DIET PLAN", "NUTRITION & RECOVERY",
+              "THE PHILOSOPHY"]
+    n_sec = min(len(titles), max(2, len(sents) // 5))
+    chunks = _chunk(sents, n_sec)
+    hook = (f"How did {name} build their physique? Here is the real "
+            f"training and diet behind it.")
+    close = (f"That is the workout and diet behind {name}'s physique - the "
+             f"training, the food, and the discipline that built it.")
+    lines = [f"# {name} - Workout & Diet Documentary", "",
+             f"## [{_mmss(0)}] HOOK", "", hook, "",
+             f"## [{_mmss(20)}] SOURCING", "",
+             f"This is compiled from public fitness features and interviews "
+             f"about {name}'s training and diet."]
+    t = 42.0
+    for i, c in enumerate(chunks):
+        lines += ["", f"## [{_mmss(t)}] {titles[i]}", "", " ".join(c)]
+        t += max(40, (minutes * 60 - 80) / max(1, n_sec))
+    lines += ["", f"## [{_mmss(t)}] CLOSE", "", close]
+
+    out = settings.TRANSCRIPTS / f"transcript_{slugify(name)}.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(lines), encoding="utf-8")
+    return out, {"type": "fitness", "coach": "", "sourced": True,
+                 "title": name, "sources": [s.get("url") for s in sources]}
+
+
 def generate_api(name: str, minutes: int, context: str = ""):
     """Write the documentary with the Claude API, GROUNDED in the verified
     research passed in (Wikipedia) plus the model's own sourced knowledge -

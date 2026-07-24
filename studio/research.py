@@ -68,6 +68,84 @@ def classify(description: str, categories: list, text: str) -> str:
     return "public figure"
 
 
+_FITNESS_KW = [
+    "workout", "training", "trained", "train ", "gym", "exercise", "reps",
+    "sets", "bench", "squat", "deadlift", "press", "curl", "cardio", "hiit",
+    "muscle", "physique", "body fat", "bodyfat", "shredded", "bulk", "cut ",
+    "lean", "diet", "nutrition", "eats", "eating", "meal", "protein",
+    "carb", "calorie", "macro", "supplement", "trainer", "coach", "routine",
+    "split", "lifting", "weights", "fitness", "pounds", "abs", "core",
+    "conditioning", "recovery", "pull-up", "push-up", "lunge", "row ",
+    "fat loss", "transformation", "shape", "ripped", "regimen",
+]
+_FIT_SITES = ["menshealth", "muscleandfitness", "mensjournal", "gq.com",
+              "coachmag", "manofmany", "healthline", "esquire", "shape.com",
+              "womenshealthmag", "muscleandhealth", "thefitnesstribe",
+              "generationiron", "boxrox", "hindustantimes", "ndtv",
+              "popsugar", "self.com", "eatthis"]
+
+
+def _is_fitness(text: str) -> bool:
+    t = text.lower()
+    return sum(1 for k in _FITNESS_KW if k in t) >= 1
+
+
+def _extract_text(html_str: str) -> str:
+    import html
+    import re
+    html_str = re.sub(r"(?is)<(script|style|nav|footer|header|aside|form)"
+                      r"[^>]*>.*?</\1>", " ", html_str)
+    ps = re.findall(r"(?is)<p[^>]*>(.*?)</p>", html_str)
+    txt = " ".join(re.sub(r"(?s)<[^>]+>", "", p) for p in ps)
+    txt = html.unescape(txt)
+    # normalise smart punctuation to ASCII (clean for TTS + on-screen text)
+    for a, b in (("’", "'"), ("‘", "'"), ("“", '"'),
+                 ("”", '"'), ("—", " - "), ("–", "-"),
+                 ("…", "..."), (" ", " "), ("�", "'")):
+        txt = txt.replace(a, b)
+    return re.sub(r"\s+", " ", txt).strip()
+
+
+def fetch_fitness_content(name: str, max_articles: int = 4) -> list:
+    """Search fitness publications for the subject's real workout & diet
+    coverage and return extracted article text. No API key."""
+    import re
+    import requests
+    q = f"{name} workout routine and diet plan"
+    urls = []
+    try:
+        r = requests.post("https://html.duckduckgo.com/html/",
+                          data={"q": q}, headers=_UA, timeout=20)
+        for href in re.findall(r'href="(https?://[^"]*uddg=[^"]+)"', r.text):
+            m = re.search(r"uddg=([^&]+)", href)
+            if m:
+                urls.append(requests.utils.unquote(m.group(1)))
+        # plain result links too
+        urls += re.findall(r'class="result__a"[^>]*href="(https?://[^"]+)"',
+                           r.text)
+    except Exception as ex:
+        logs.log(f"fitness search failed: {ex}", "error")
+    # prefer known fitness / entertainment outlets
+    urls = list(dict.fromkeys(urls))
+    urls.sort(key=lambda u: 0 if any(s in u.lower() for s in _FIT_SITES)
+              else 1)
+    out = []
+    for u in urls[:10]:
+        if len(out) >= max_articles:
+            break
+        try:
+            a = requests.get(u, headers=_UA, timeout=15)
+            a.encoding = a.apparent_encoding or "utf-8"
+            txt = _extract_text(a.text)
+            if len(txt.split()) > 150 and _is_fitness(txt):
+                out.append({"url": u, "text": txt})
+                logs.log(f"  fitness source: {u[:70]} "
+                         f"({len(txt.split())} words)")
+        except Exception:
+            pass
+    return out
+
+
 def research_subject(name: str) -> dict:
     """Return a real, sourced profile of the subject (or a minimal stub)."""
     out = {"name": name, "title": name, "type": "public figure",
