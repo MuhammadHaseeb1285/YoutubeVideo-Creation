@@ -46,41 +46,43 @@ def _clamp(x):
 # Each profile is a documentary delivery, tuned by prosody. Voices are
 # generic TTS narrators (no real-person cloning). Trait scores drive the
 # on-screen radar in the dashboard.
+# Rates/pitches tuned for a punchy, energetic YouTube-documentary delivery
+# (higher pitch, faster) - not a soft, slow read.
 PROFILES = {
     "energetic": {
         "label": "Confident & Energetic",
         "blurb": "Punchy, high-drive delivery for training and action.",
-        "voice": "en-US-GuyNeural", "rate": "+9%", "pitch": "+0Hz",
+        "voice": "en-US-GuyNeural", "rate": "+14%", "pitch": "+14Hz",
         "traits": {"energy": 0.95, "confidence": 0.9, "warmth": 0.5,
                    "pace": 0.85, "drama": 0.8, "seriousness": 0.4},
     },
     "motivational": {
         "label": "Motivational & Uplifting",
         "blurb": "Warm, rising delivery for transformation stories.",
-        "voice": "en-US-BrianNeural", "rate": "+5%", "pitch": "+1Hz",
+        "voice": "en-US-GuyNeural", "rate": "+10%", "pitch": "+12Hz",
         "traits": {"energy": 0.75, "confidence": 0.8, "warmth": 0.85,
                    "pace": 0.6, "drama": 0.7, "seriousness": 0.5},
     },
     "authoritative": {
-        "label": "Calm & Authoritative",
-        "blurb": "Measured, credible delivery with weight and control.",
-        "voice": "en-US-ChristopherNeural", "rate": "-2%", "pitch": "-2Hz",
-        "traits": {"energy": 0.45, "confidence": 0.9, "warmth": 0.45,
-                   "pace": 0.4, "drama": 0.5, "seriousness": 0.9},
+        "label": "Strong & Authoritative",
+        "blurb": "Bold, driving delivery with weight and momentum.",
+        "voice": "en-US-GuyNeural", "rate": "+6%", "pitch": "+8Hz",
+        "traits": {"energy": 0.7, "confidence": 0.95, "warmth": 0.45,
+                   "pace": 0.6, "drama": 0.7, "seriousness": 0.85},
     },
     "measured": {
         "label": "Measured & Informative",
-        "blurb": "Even, unhurried delivery for history and analysis.",
-        "voice": "en-GB-RyanNeural", "rate": "-5%", "pitch": "+0Hz",
-        "traits": {"energy": 0.35, "confidence": 0.7, "warmth": 0.55,
-                   "pace": 0.3, "drama": 0.35, "seriousness": 0.85},
+        "blurb": "Even, clear delivery for analysis and history.",
+        "voice": "en-US-BrianNeural", "rate": "+3%", "pitch": "+6Hz",
+        "traits": {"energy": 0.5, "confidence": 0.8, "warmth": 0.55,
+                   "pace": 0.5, "drama": 0.45, "seriousness": 0.85},
     },
     "conversational": {
         "label": "Natural & Conversational",
-        "blurb": "Relaxed, personable delivery that feels one-to-one.",
-        "voice": "en-US-AndrewNeural", "rate": "+2%", "pitch": "+0Hz",
-        "traits": {"energy": 0.6, "confidence": 0.7, "warmth": 0.9,
-                   "pace": 0.55, "drama": 0.45, "seriousness": 0.4},
+        "blurb": "Bright, personable delivery that feels one-to-one.",
+        "voice": "en-US-GuyNeural", "rate": "+8%", "pitch": "+10Hz",
+        "traits": {"energy": 0.7, "confidence": 0.75, "warmth": 0.9,
+                   "pace": 0.6, "drama": 0.5, "seriousness": 0.4},
     },
 }
 DEFAULT_PROFILE = "authoritative"

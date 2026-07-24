@@ -54,21 +54,29 @@ def resolve_script(params) -> tuple:
     ctype = prof.get("type", "public figure")
     context = (prof.get("intro") or prof.get("summary") or "")[:2800]
 
-    tp = None
+    # A real WORKOUT & DIET documentary needs a knowledge source for the
+    # training/nutrition specifics. Wikipedia only has a biography, so
+    # without the API key we STOP with a clear instruction instead of
+    # shipping a 1-minute off-topic bio.
     try:
         tp, detected = T.generate_api(name, minutes, context)
         coach = coach or detected
-        logs.log("script: workout & diet documentary "
-                 "(Wikipedia research + Claude API, verified)")
-    except Exception as e:
-        logs.log(f"script: Claude API unavailable ({e}); building an "
-                 "honest chronological documentary from Wikipedia research")
-        try:
-            tp, meta = T.generate_researched(name, minutes, prof)
-            coach = coach or meta.get("coach", "")
-        except Exception as e2:
-            logs.log(f"script: research failed ({e2}); minimal script")
-            tp = T.generate_generic(name, minutes)
+        logs.log("script: workout & diet documentary (Wikipedia research + "
+                 "Claude API, verified, length-filled)")
+    except T.NoApiKey:
+        raise RuntimeError(
+            f"A workout & diet documentary about {name} needs a knowledge "
+            f"source for the real training and nutrition. Add a Claude API "
+            f"key in Settings (the app then researches and writes it), OR "
+            f"paste your own script in the Documentary Input tab. Wikipedia "
+            f"only has a biography - not workout/diet data - so a name alone "
+            f"cannot produce a fitness documentary offline.")
+    except T.NoFitnessData:
+        raise RuntimeError(
+            f"{name} has no publicly documented workout or diet, so a "
+            f"fitness documentary can't be built from real sources. Choose a "
+            f"celebrity with a documented fitness/transformation - e.g. an "
+            f"action-movie actor, an athlete, or a fitness creator.")
 
     logs.metric("subject_type", ctype)
     params["_ctype"] = ctype

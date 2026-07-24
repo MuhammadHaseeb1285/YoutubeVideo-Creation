@@ -18,6 +18,16 @@ def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_") or "subject"
 
 
+class NoApiKey(Exception):
+    """No Claude API key available for the researched-write path."""
+
+
+class NoFitnessData(Exception):
+    """The subject has no publicly documented training/diet to build on."""
+    def __init__(self, name):
+        super().__init__(f"no public workout/diet data for {name}")
+
+
 # ---------------------------------------------------------- sentence typing
 def _rules(coach: str, subject: str):
     cw = [w.lower() for w in coach.split()] if coach else []
@@ -385,49 +395,74 @@ def generate_api(name: str, minutes: int, context: str = ""):
     if not key and key_file.exists():
         key = key_file.read_text().strip()
     if not key:
-        raise RuntimeError("no ANTHROPIC_API_KEY")
+        raise NoApiKey("no ANTHROPIC_API_KEY")
 
     words = minutes * 152
     ctx = (f"\n\nVERIFIED RESEARCH (from Wikipedia - use as grounding, "
            f"cross-checked with your own reliably-sourced knowledge):\n"
            f"{context.strip()}\n") if context.strip() else ""
-    prompt = f"""You are writing a professionally researched YouTube
-documentary narration script (~{words} words, spoken as voiceover) about
-the WORKOUT ROUTINE and DIET PLAN of {name}.
+    prompt = f"""You are writing a professionally researched YouTube WORKOUT
+& DIET documentary narration script about {name} (spoken as voiceover).
 
-This is MAINLY a documentary about how {name} TRAINS and EATS - the actual
-workout routine (splits, exercises, sets/reps, cardio) and the diet plan
-(meals, foods, calories/macros, supplements) - told as an engaging story.
-Woven THROUGH that, cover how their body was transformed for specific FILM
-or TV roles over their career: which project, why the change was needed,
-reported weight/body-fat changes if publicly reported, how the training and
-diet were adjusted for it, the coach/trainer involved, and the result. The
-transformations are part of the story; the workout and diet plan are the
-main subject.
+The documentary answers ONE question: "How did {name} build and maintain
+their physique?" Everything must revolve around FITNESS - training,
+nutrition, body transformation, and physical preparation.
 
-Tell it as a smooth, chronological narrative (never a bullet list): how
-they trained and ate early on, how it evolved across roles, the standout
-role transformations, and their current training and nutrition philosophy.
-Always explain the WHY behind each change.
+DO NOT discuss awards, television appearances, relationships, business
+ventures, general career history, red carpet events, or lifestyle - UNLESS
+a point directly explains a physical transformation (e.g. a film role that
+required bulking up). No biography for its own sake.
 
-WORK WITH BOTH SOURCES: use the verified research provided below together
-with your own reliably-sourced knowledge (interviews, Men's Health and
-similar outlets, trainer/nutritionist interviews, podcasts, documentaries),
-and cross-check. VERIFIED FACTS ONLY - do NOT invent workout plans, diet
-plans, exercises, weights, calorie numbers, macros, supplements or quotes.
-Hedge estimates ("reported", "he has said") and omit anything you cannot
-verify rather than guessing.{ctx}
-Format: first line exactly <!--COACH: trainer full name--> if a specific
-trainer/coach is genuinely central, else <!--COACH: none-->. Then
-'# {name} - Documentary'. Then chronological sections '## [MM:SS] TITLE'.
-Keep every sentence natural and speakable."""
+Build the documentary AROUND BODY TRANSFORMATIONS. Research every significant
+physical transformation in {name}'s career and give EACH its own chapter,
+explaining as flowing narrative: why it was needed; the project/event that
+required it; starting physique; target physique; training duration; the
+workout split; the daily routine; the diet strategy; calories and macros
+when publicly available; recovery methods; the coach/trainer; challenges
+faced; and the final outcome. Also cover how the training and diet PHILOSOPHY
+evolved over time.
+
+LENGTH IS MANDATORY: the finished script MUST be about {words} words so it
+narrates to ~{minutes} minutes. NEVER finish early. If one transformation is
+not enough to fill the time, expand with additional verified workout phases,
+multiple diet phases, different training periods, preparation for different
+projects, recovery phases, and how their philosophy changed - all still
+fitness-focused. Keep going until you reach ~{words} words.
+
+WORK WITH BOTH SOURCES: use the verified research below plus your own
+reliably-sourced knowledge (interviews, Men's Health and similar, trainer/
+nutritionist interviews, podcasts, documentaries) and cross-check. VERIFIED
+FACTS ONLY - do NOT invent workout plans, diet plans, exercises, weights,
+calorie numbers, macros, supplements or quotes; hedge estimates ("reported",
+"he has said") and omit what you cannot verify. If {name} has no publicly
+documented training or diet, reply with exactly: NO_FITNESS_DATA{ctx}
+Format: first line exactly <!--COACH: trainer full name--> if a trainer is
+central, else <!--COACH: none-->. Then '# {name} - Documentary'. Then
+fitness chapters '## [MM:SS] TITLE'. Every sentence natural and speakable."""
     client = anthropic.Anthropic(api_key=key)
-    resp = client.messages.create(
-        model="claude-opus-4-8", max_tokens=20000,
-        thinking={"type": "enabled", "budget_tokens": 6000},
-        messages=[{"role": "user", "content": prompt}])
-    text = "".join(b.text for b in resp.content
-                   if b.type == "text").strip()
+    msgs = [{"role": "user", "content": prompt}]
+    text = ""
+    for _ in range(4):                     # keep going until length is met
+        resp = client.messages.create(
+            model="claude-opus-4-8", max_tokens=20000,
+            thinking={"type": "enabled", "budget_tokens": 6000},
+            messages=msgs)
+        chunk = "".join(b.text for b in resp.content
+                        if b.type == "text").strip()
+        if "NO_FITNESS_DATA" in chunk and not text:
+            raise NoFitnessData(name)
+        text = (text + "\n\n" + chunk).strip() if text else chunk
+        if len(text.split()) >= words * 0.9:
+            break
+        msgs += [{"role": "assistant", "content": chunk},
+                 {"role": "user", "content":
+                  f"Continue the SAME documentary from where it stopped - "
+                  f"more verified workout phases, diet phases, role "
+                  f"transformations and recovery for {name}, still "
+                  f"fitness-only, until the whole script reaches about "
+                  f"{words} words. Do not repeat earlier sections or add a "
+                  f"conclusion until the length is reached."}]
+
     coach = ""
     m = re.match(r"\s*<!--COACH:\s*(.+?)\s*-->", text)
     if m:
