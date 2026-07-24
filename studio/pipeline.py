@@ -123,7 +123,12 @@ def generate(params: dict) -> dict:
 
         # 2 - FOOTAGE (only when asked to fetch by name)
         logs.stage(2, len(STAGES), "Footage")
-        if params.get("download", mode == "name") and name:
+        # Fetch footage whenever we have a name to search - in ANY mode
+        # (paste-script / URL / audio included) - unless explicitly disabled.
+        want_dl = params.get("download")
+        if want_dl is None:
+            want_dl = bool(name)
+        if want_dl and name:
             ctype = params.get("_ctype", "public figure")
             assets.download(research.build_queries(name, coach, slug, ctype))
         inv = assets.inventory()
@@ -137,8 +142,11 @@ def generate(params: dict) -> dict:
         logs.metric("shots", len(shots))
         logs.log(f"shot database: {len(shots)} shots ({dropped} dropped)")
         if not shots:
-            raise RuntimeError("no usable footage - import or download "
-                               "videos before building")
+            raise RuntimeError(
+                "No footage to build from. Enter the celebrity's name so "
+                "the app can download clips (footage = Auto or Always), or "
+                "import your own videos in Asset Manager - then generate "
+                "again.")
 
         # 4 - NARRATION (profile chosen from the transcript's tone)
         logs.stage(4, len(STAGES), "Narration")
