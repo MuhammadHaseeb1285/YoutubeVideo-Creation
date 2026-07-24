@@ -3,17 +3,21 @@
 CELEB_VIDEO - celebrity documentary launcher.
 
   Option 1: enter a celebrity NAME
-      -> Claude API writes a ~17-minute documentary transcript
-         (career-long workout story, diet plan, movie/role prep)
-      -> multiple YouTube searches are generated from that name
-      -> videos download, scenes are detected, the film is built
+      -> Claude API writes a documentary transcript, TTS narration
   Option 2: enter a TRANSCRIPT PATH
-      -> your transcript is used as-is; you supply the subject name
-         so the footage searches match it
+      -> your script is used as-is, TTS narration; you give the subject
+         name so the footage searches match it
+  Option 3: provide your own NARRATION AUDIO (file path or URL - local,
+      YouTube, Google Drive, or direct link)
+      -> the recording is transcribed locally with Whisper (no API, no
+         keys), trailing silence trimmed, and a time-aligned transcript
+         written. The film plays YOUR real voice and every sentence is
+         pinned to its true spoken moment, so audio and video stay matched.
 
-Everything downstream (scene detection, unique-shot selection,
-subject-first 90/10 balance, text animations, validation) is the same
-pipeline as before - nothing is hardcoded to one person anymore.
+Everything downstream (scene detection, semantic per-sentence shot
+selection, text animations, validation) is subject-agnostic - the
+selector maps any subject's footage to the right topic, so the audio and
+visuals match for whoever the documentary is about, not just one person.
 """
 
 import json
@@ -186,11 +190,28 @@ def main():
     print("\n" + "=" * 70)
     print("CELEBRITY DOCUMENTARY BUILDER")
     print("=" * 70)
-    print("\n  1) Enter a celebrity name  (transcript is generated)")
-    print("  2) Enter a transcript path (your script is used)\n")
-    choice = input("Choose 1 or 2: ").strip()
+    print("\n  1) Enter a celebrity name   (transcript is generated, TTS voice)")
+    print("  2) Enter a transcript path  (your script is used, TTS voice)")
+    print("  3) Provide narration audio  (your real recording - "
+          "transcribed & synced)\n")
+    choice = input("Choose 1, 2 or 3: ").strip()
+    has_audio = False
 
-    if choice == "1":
+    if choice == "3":
+        src = input("Narration audio/video (file path or URL): ").strip()
+        if not src:
+            print("[!] nothing given")
+            return False
+        name = input("Celebrity name (for footage searches): ").strip()
+        coach = input("Coach/trainer name (ENTER if none): ").strip()
+        slug = slugify(name) or "subject"
+        print("\n[1/4] Transcribing your narration (real audio -> "
+              "time-aligned transcript)...")
+        import NARRATION_FROM_AUDIO
+        transcript = NARRATION_FROM_AUDIO.build_narration(
+            src, slug, subject=name)
+        has_audio = True
+    elif choice == "1":
         name = input("Celebrity name: ").strip()
         if not name:
             print("[!] no name given")
@@ -224,14 +245,18 @@ def main():
         print("[!] invalid choice")
         return False
 
-    print("\nNarrator voice (a professional documentary voice - real"
-          " celebrity voices cannot be cloned):")
-    print("  1) Male   (en-US-ChristopherNeural)")
-    print("  2) Female (en-US-JennyNeural)")
-    print("  3) Male UK (en-GB-RyanNeural)")
-    v = input("Choose 1-3 [1]: ").strip()
-    voice = {"2": "en-US-JennyNeural",
-             "3": "en-GB-RyanNeural"}.get(v, "en-US-ChristopherNeural")
+    if has_audio:
+        voice = ""            # real recording is used; no TTS voice needed
+        print("\n[OK] Using your real narration (no TTS voice).")
+    else:
+        print("\nNarrator voice (a professional documentary voice - real"
+              " celebrity voices cannot be cloned):")
+        print("  1) Male   (en-US-ChristopherNeural)")
+        print("  2) Female (en-US-JennyNeural)")
+        print("  3) Male UK (en-GB-RyanNeural)")
+        v = input("Choose 1-3 [1]: ").strip()
+        voice = {"2": "en-US-JennyNeural",
+                 "3": "en-GB-RyanNeural"}.get(v, "en-US-ChristopherNeural")
 
     slug = slugify(name)
     CONFIG.write_text(json.dumps({

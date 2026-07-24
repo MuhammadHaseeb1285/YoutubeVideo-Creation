@@ -253,6 +253,207 @@ def exercise_of_shot(source, scene):
     return None
 
 
+# ------------------------------------------------------------ semantic model
+# Every shot's category is mapped to a coarse VISUAL GROUP, and every
+# sentence type gets a graded affinity for each group. Selection then ranks
+# the ENTIRE shot database by relevance to the current sentence instead of
+# walking fixed preference buckets. This is what makes the visuals follow
+# the narration: when the script talks about the back, back footage wins;
+# when it talks about food, food wins; the subject is a tie-breaker, never
+# an override that pastes "generic Ryan" over an unrelated topic.
+
+CAT_GROUP = {
+    "ryan_interview": "subject_talk", "ryan_split": "subject_talk",
+    "ryan_press": "subject_talk", "ryan_event": "subject_talk",
+    "ryan_shirtless": "subject_phys", "ryan_abs": "subject_phys",
+    "ryan_photoshoot": "subject_phys", "ryan_photo": "subject_phys",
+    "ryan_outdoor": "subject_phys", "ryan_home": "subject_phys",
+    "ryan_gym": "subject_gym", "ryan_coach_gym": "subject_gym",
+    "deadpool_suit": "subject_movie", "deadpool_title": "subject_movie",
+    "ryan_movie": "subject_movie", "ryan_bts": "subject_movie",
+    "coach_talk": "coach", "coach_gym": "coach",
+    "chest": "ex_chest", "chest_talk": "ex_chest",
+    "back": "ex_back", "legs": "ex_legs",
+    "shoulders": "ex_should", "arms": "ex_should",
+    "cardio": "ex_cardio", "cardio_talk": "ex_cardio",
+    "cardio_run": "ex_cardio",
+    "food": "food", "nutrition_anim": "food",
+    "recovery": "recovery", "equipment": "equipment",
+}
+SUBJECT_GROUPS = {"subject_talk", "subject_phys", "subject_gym",
+                  "subject_movie"}
+
+
+def group_of(cat):
+    """Map a footage category to its visual group. Explicit table first;
+    then subject-agnostic keyword rules so footage classified for ANY
+    subject (or with new labels) still lands in the right group instead of
+    defaulting blindly."""
+    g = CAT_GROUP.get(cat)
+    if g:
+        return g
+    c = cat.lower()
+    if "coach" in c or "trainer" in c:
+        return "coach"
+    if any(k in c for k in ("food", "meal", "diet", "nutrition", "eat")):
+        return "food"
+    if any(k in c for k in ("recovery", "stretch", "yoga", "sauna",
+                            "massage", "mobility", "sleep")):
+        return "recovery"
+    if any(k in c for k in ("chest", "bench", "pushup", "push_up")):
+        return "ex_chest"
+    if any(k in c for k in ("back", "row", "pulldown", "pullup", "pull_up",
+                            "deadlift")):
+        return "ex_back"
+    if any(k in c for k in ("leg", "squat", "lunge", "quad")):
+        return "ex_legs"
+    if any(k in c for k in ("shoulder", "delt", "curl", "bicep", "tricep",
+                            "lateral", "overhead", "arm")):
+        return "ex_should"
+    if any(k in c for k in ("cardio", "run", "sprint", "condition",
+                            "rope", "boxing")):
+        return "ex_cardio"
+    if "equip" in c:
+        return "equipment"
+    if any(k in c for k in ("gym", "workout", "training", "lift")):
+        return "subject_gym"
+    if any(k in c for k in ("shirtless", "abs", "physique", "photoshoot",
+                            "photo", "beach", "outdoor", "home", "body")):
+        return "subject_phys"
+    if any(k in c for k in ("interview", "press", "talk", "split", "event",
+                            "conference", "carpet", "speech", "podcast")):
+        return "subject_talk"
+    if any(k in c for k in ("movie", "film", "suit", "title", "premiere",
+                            "bts", "scene", "trailer", "role", "clip")):
+        return "subject_movie"
+    return "subject_movie"
+
+
+# Exercises that read the same on screen share a "family": when the exact
+# exercise has no footage, footage from the same family is the correct
+# fallback (a deadlift mention takes pull footage, not a red-carpet photo).
+EXERCISE_FAMILY = {
+    "bench_press": "push", "pushup": "push", "dips": "push",
+    "pullup": "pull", "row": "pull", "deadlift": "pull",
+    "squat": "legs", "lunge": "legs",
+    "overhead_press": "arms_sh", "curl": "arms_sh",
+    "running": "cond", "jump_rope": "cond", "boxing": "cond",
+    "kettlebell": "cond", "medicine_ball": "cond", "carry": "cond",
+    "breathing": "recov", "stretching": "recov",
+}
+CAT_FAMILY = {"ex_chest": "push", "ex_back": "pull", "ex_legs": "legs",
+              "ex_should": "arms_sh", "ex_cardio": "cond",
+              "recovery": "recov"}
+
+EX_STYPES = {"chest", "back", "legs", "shoulders", "cardio", "workout"}
+STYPE_TARGET_GROUP = {"chest": "ex_chest", "back": "ex_back",
+                      "legs": "ex_legs", "shoulders": "ex_should",
+                      "cardio": "ex_cardio"}
+
+
+def topic_affinity(stype, grp):
+    """How well a shot's visual group fits a sentence of this type.
+    Higher = more on-topic. Tuned so the correct topic beats a generic
+    subject shot, while the subject still beats truly unrelated footage."""
+    if stype in EX_STYPES:
+        tgt = STYPE_TARGET_GROUP.get(stype)
+        if grp == "subject_gym":
+            return 700               # the subject actually training: ideal
+        if grp == tgt:
+            return 620               # exact muscle-group B-roll
+        if grp == "coach":
+            return 430               # coach coaching the lift
+        if grp == "equipment":
+            return 330
+        if grp == "subject_phys":
+            return 400               # the physique being built
+        if grp.startswith("ex_"):
+            return 300 if stype == "workout" else 210
+        if grp == "subject_movie":
+            return 250
+        if grp == "subject_talk":
+            return 180
+        if grp in ("food", "recovery"):
+            return 40                # off-topic during a lifting cue
+        return 120
+    if stype == "nutrition":
+        return {"food": 780, "subject_talk": 320, "subject_phys": 250,
+                "subject_gym": 220, "subject_movie": 180, "coach": 200,
+                "equipment": 150, "recovery": 120}.get(grp, 40)
+    if stype == "recovery":
+        return {"recovery": 780, "subject_phys": 360, "subject_gym": 300,
+                "subject_talk": 280, "subject_movie": 240, "coach": 260,
+                "food": 120, "equipment": 150}.get(grp, 60)
+    if stype == "coach":
+        return {"coach": 780, "subject_gym": 470, "subject_talk": 320,
+                "subject_phys": 260, "subject_movie": 240,
+                "equipment": 180}.get(grp, 90)
+    if stype == "deadpool":
+        return {"subject_movie": 740, "subject_phys": 470,
+                "subject_gym": 430, "subject_talk": 320, "coach": 200,
+                "equipment": 120}.get(grp, 90)
+    if stype == "ryan":
+        return {"subject_talk": 650, "subject_phys": 650,
+                "subject_movie": 610, "subject_gym": 570, "coach": 270,
+                "equipment": 100}.get(grp, 70)
+    # generic narration: keep the subject on screen
+    return {"subject_gym": 560, "subject_talk": 540, "subject_phys": 540,
+            "subject_movie": 520, "coach": 320, "equipment": 150}.get(grp, 90)
+
+
+def relevance(sh, stype, want_ex):
+    """Positive semantic score of one shot for one sentence. The entire
+    unused pool is ranked by this every pick, so the highest real match
+    wins - not the next filename in line."""
+    grp = group_of(sh["cat"])
+    ex = sh.get("ex")
+    r = 0.0
+    if want_ex:
+        fam = EXERCISE_FAMILY.get(want_ex)
+        if ex == want_ex:
+            r += 1300                       # the exact spoken exercise
+        elif ex and EXERCISE_FAMILY.get(ex) == fam:
+            r += 660                        # same movement family
+        elif not ex and CAT_FAMILY.get(grp) == fam:
+            r += 430                        # generic footage of that family
+    r += topic_affinity(stype, grp)
+    if grp in SUBJECT_GROUPS:
+        r += 55                             # subject-first tie-breaker
+    r += 22 * sh.get("q", 1)                # premium footage nudge
+    return r
+
+
+ACCEPT_GROUPS = {
+    "chest": {"subject_gym", "ex_chest", "coach", "equipment",
+              "subject_phys", "subject_movie", "subject_talk"},
+    "back": {"subject_gym", "ex_back", "coach", "equipment",
+             "subject_phys", "subject_movie", "subject_talk"},
+    "legs": {"subject_gym", "ex_legs", "coach", "equipment",
+             "subject_phys", "subject_movie", "subject_talk"},
+    "shoulders": {"subject_gym", "ex_should", "coach", "equipment",
+                  "subject_phys", "subject_movie", "subject_talk"},
+    "cardio": {"subject_gym", "ex_cardio", "coach", "equipment",
+               "subject_phys", "subject_movie", "subject_talk"},
+    "workout": {"subject_gym", "ex_chest", "ex_back", "ex_legs",
+                "ex_should", "ex_cardio", "coach", "equipment",
+                "subject_phys", "subject_movie", "subject_talk"},
+    "nutrition": {"food", "subject_talk", "subject_phys", "subject_gym",
+                  "coach", "equipment", "subject_movie"},
+    "recovery": {"recovery", "subject_phys", "subject_gym", "subject_talk",
+                 "coach", "subject_movie"},
+    "coach": {"coach", "subject_gym", "subject_talk", "subject_phys",
+              "subject_movie"},
+    "deadpool": {"subject_movie", "subject_phys", "subject_gym",
+                 "subject_talk", "coach"},
+    "ryan": SUBJECT_GROUPS | {"coach"},
+    "generic": SUBJECT_GROUPS | {"coach", "equipment"},
+}
+
+
+def on_topic(stype, cat):
+    return group_of(cat) in ACCEPT_GROUPS.get(stype, SUBJECT_GROUPS)
+
+
 # ------------------------------------------------------------ util
 
 def ffprobe_duration(p):
@@ -263,22 +464,92 @@ def ffprobe_duration(p):
     return float(r.stdout.strip())
 
 
+TIMING_FILE = ROOT / "narration_timing.json"
+
+
 def make_voiceover():
+    """Render the narration AND capture word-level spoken timings.
+
+    The text spoken is the exact ordered sentence stream that the timeline
+    is built from, so the visuals can be pinned to the real moment each
+    sentence is heard (edge-tts emits a WordBoundary per word). This is
+    what makes audio and video actually line up instead of guessing from
+    sentence length."""
     try:
         import edge_tts
     except ImportError:
         subprocess.run(["pip", "install", "edge-tts", "-q"], check=True)
         import edge_tts
-    content = TRANSCRIPT.read_text(encoding="utf-8")
-    lines = [l.strip() for l in content.split("\n")
-             if l.strip() and not l.startswith("#") and not l.startswith("[")]
 
-    voice = _cfg.get("voice", "en-US-ChristopherNeural")
+    sentences = [s for _, sents in parse_sections() for s in sents]
+    text = " ".join(sentences)
+    voice = _cfg.get("voice", "en-US-AndrewNeural")
+
+    segs = []
 
     async def _s():
-        c = edge_tts.Communicate(" ".join(lines), voice)
-        await c.save(str(VOICEOVER))
+        c = edge_tts.Communicate(text, voice)
+        with open(VOICEOVER, "wb") as f:
+            async for chunk in c.stream():
+                ct = chunk.get("type")
+                if ct == "audio":
+                    f.write(chunk["data"])
+                elif ct in ("SentenceBoundary", "WordBoundary"):
+                    segs.append({"t": round(chunk["offset"] / 1e7, 3),
+                                 "dur": round(chunk["duration"] / 1e7, 3),
+                                 "text": chunk.get("text", "")})
     asyncio.run(_s())
+    TIMING_FILE.write_text(json.dumps(segs))
+    return segs
+
+
+def load_timing():
+    if TIMING_FILE.exists():
+        try:
+            return json.loads(TIMING_FILE.read_text())
+        except Exception:
+            return None
+    return None
+
+
+def sentence_start_times(sentences, audio_dur):
+    """Real (start, dur) per parsed sentence from captured spoken-sentence
+    boundaries. The TTS re-segments the identical character stream, so we
+    align by character position: each parsed sentence inherits the spoken
+    time of the boundary that covers its characters. Falls back to
+    character-length proportion when no timing is present."""
+    segs = load_timing()
+    if segs and len(segs) >= max(3, len(sentences) * 0.5):
+        # character span [a, b) of each spoken boundary within the joined
+        # narration text (same text the sentences were joined into)
+        spoken, pos = [], 0
+        for s in segs:
+            n = len(s.get("text", ""))
+            spoken.append((pos, pos + n, s["t"]))
+            pos += n + 1                       # +1 for the joining space
+
+        starts, cur = [], 0
+        for sent in sentences:
+            mid = cur + len(sent) / 2          # this sentence's char midpoint
+            covering = [sp for sp in spoken if sp[0] <= mid < sp[1]]
+            if covering:
+                start = covering[0][2]
+            else:                              # nearest boundary by char pos
+                start = min(spoken,
+                            key=lambda sp: abs(mid - (sp[0] + sp[1]) / 2))[2]
+            starts.append(start)
+            cur += len(sent) + 1
+        for i in range(1, len(starts)):        # enforce non-decreasing
+            if starts[i] < starts[i - 1]:
+                starts[i] = starts[i - 1]
+        return starts
+
+    total = sum(len(s) for s in sentences) or 1
+    starts, t = [], 0.0
+    for s in sentences:
+        starts.append(round(t, 3))
+        t += len(s) / total * audio_dur
+    return starts
 
 
 # ------------------------------------------------------------ shots
@@ -388,18 +659,20 @@ def parse_sections():
 def sentence_timeline(audio_dur):
     sections = parse_sections()
     flat = [(title, s) for title, sents in sections for s in sents]
-    total = sum(len(s) for _, s in flat) or 1
-    out, t = [], 0.0
+    sents_only = [s for _, s in flat]
+    starts = sentence_start_times(sents_only, audio_dur)
+    out = []
     seen_sections = set()
-    for title, s in flat:
-        d = len(s) / total * audio_dur
+    for i, (title, s) in enumerate(flat):
+        st = starts[i]
+        nxt = starts[i + 1] if i + 1 < len(starts) else audio_dur
+        d = max(0.4, nxt - st)                  # spoken length of this line
         first = title not in seen_sections
         seen_sections.add(title)
         out.append({"text": s, "type": type_of_sentence(s),
                     "ex": exercise_of_sentence(s),
                     "section": title, "sec_start": first,
-                    "start": round(t, 2), "dur": round(d, 2)})
-        t += d
+                    "start": round(st, 2), "dur": round(d, 2)})
     return out
 
 
@@ -412,56 +685,29 @@ def build_timeline(sentences, shots):
     last_src, last_cat = [], []
     timeline, slot = [], 0
 
-    # Reservation: Ryan/coach footage is protected for Ryan/coach
-    # narration until that demand is covered.
-    demand_ryan = sum(s["dur"] for s in sentences
-                      if s["type"] in RYAN_TYPES)
-    pool_ryan = sum(min(MAX_PIECE, s["len"]) for s in shots
-                    if s["cat"] in RYAN_POOL)
-
-    def score(sh, protect):
-        s = 0.0
-        s += 300 * scene_used[sh["scene"]]          # same scene again: bad
+    def penalty(sh):
+        """Editorial cost of repetition / monotony. Kept below the topic
+        scores so it re-orders equally on-topic shots rather than dragging
+        an off-topic one to the top."""
+        p = 0.0
+        p += 260 * scene_used[sh["scene"]]          # this scene already used
         if slot - scene_last_slot.get(sh["scene"], -999) < SCENE_SPACING:
-            s += 900                                # same scene too soon
+            p += 800                                # same scene too soon
         if sh["source"] in last_src[-2:]:
-            s += 220                                # same video back-to-back
+            p += 180                                # same video back-to-back
         if sh["cat"] in last_cat[-1:]:
-            s += 60                                 # rotate visual category
-        if protect and sh["cat"] in RYAN_POOL:
-            s += 600                                # reserved for Ryan talk
-        if sh["cat"] not in RYAN_POOL and slot > 10:
-            broll = sum(1 for e in timeline
-                        if e["cat"] not in RYAN_POOL)
-            if broll / max(1, len(timeline)) > BROLL_SHARE:
-                s += 450          # keep supporting footage near 10%
-        s -= 40 * sh["q"]                           # premium footage bonus
-        return s
+            p += 70                                 # rotate visual category
+        return p
 
     def pick(stype, want_ex=None):
-        protect = (stype not in RYAN_TYPES
-                   and pool_ryan < demand_ryan + 60)
-        # THE NARRATION IS THE SOURCE OF TRUTH: a sentence naming a
-        # specific exercise gets footage of THAT exercise first.
-        if want_ex:
-            exact = [s for s in unused.values() if s.get("ex") == want_ex]
-            if exact:
-                return min(exact, key=lambda c: score(c, False))
-        best_all, best_all_s = None, None
-        for tier, bucket in enumerate(PREF.get(stype, PREF["generic"])):
-            cands = [s for s in unused.values() if s["cat"] in bucket]
-            if not cands:
-                continue
-            b = min(cands, key=lambda c: score(c, protect))
-            sc = score(b, protect) + tier * 120
-            if sc < 200:
-                return b
-            if best_all is None or sc < best_all_s:
-                best_all, best_all_s = b, sc
-        if best_all is not None:
-            return best_all
-        return (min(unused.values(), key=lambda c: score(c, protect))
-                if unused else None)
+        # REQUIREMENT 3: rank the ENTIRE unused pool, choose the global best
+        # (relevance minus repetition cost). No early exit, no buckets.
+        best, best_s = None, -1e18
+        for sh in unused.values():
+            s = relevance(sh, stype, want_ex) - penalty(sh)
+            if s > best_s:
+                best_s, best = s, sh
+        return best
 
     carry = 0.0
     for sent in sentences:
@@ -495,10 +741,6 @@ def build_timeline(sentences, shots):
             del unused[sh["id"]]
             scene_used[sh["scene"]] += 1
             scene_last_slot[sh["scene"]] = slot
-            if sh["cat"] in RYAN_POOL:
-                pool_ryan -= min(MAX_PIECE, sh["len"])
-            if sent["type"] in RYAN_TYPES:
-                demand_ryan -= piece
             last_src.append(sh["source"])
             last_cat.append(sh["cat"])
             slot += 1
@@ -562,16 +804,48 @@ STAT_SPECS = [
     (r"performance physique|functional", "ex", "FUNCTIONAL TRAINING", ""),
     (r"protein|carbohydrate", "ex", "NUTRITION", ""),
     (r"recovery is treated|sleep", "ex", "RECOVERY", ""),
-    (r"seven to nine hours", "stat", "7-9 HOURS", "SLEEP TARGET"),
-    (r"zero point eight to one gram", "stat", "0.8-1 G / LB",
-     "DAILY PROTEIN"),
+    (r"seven to nine hours|7 to 9 hours|7-9 hours", "stat", "7-9 HRS",
+     "SLEEP TARGET"),
+    (r"zero point eight to one gram|0\.8 to one gram|0\.8 to 1 gram",
+     "stat", "0.8-1 G/LB", "PROTEIN TARGET"),
+    # --- statistics pulled from the narration wording (digits or spelled) ---
+    (r"190 to 195|one hundred and ninety", "stat", "190-195 LBS",
+     "FILMING WEIGHT"),
+    (r"8 to 10 percent|eight to ten percent", "stat", "8-10%",
+     "BODY FAT"),
+    (r"six feet two|6 feet 2|6'?2", "stat", "6'2\"", "HEIGHT"),
+    (r"2,?600 to 3,?200|twenty-six hundred", "stat", "2600-3200 KCAL",
+     "DEADPOOL CUT"),
+    (r"200 to 250 grams|two hundred to two hundred and fifty", "stat",
+     "200-250 G", "DAILY PROTEIN"),
+    (r"15 (plus )?years|fifteen (plus )?years|over 15", "stat", "15+ YEARS",
+     "OF CONSISTENCY"),
+    (r"three to five sets", "stat", "3-5 SETS", "6-12 REPS"),
+    # --- movie / role title cards (specific before generic) ---
+    (r"deadpool and wolverine", "movie", "DEADPOOL & WOLVERINE", "2024"),
+    (r"green lantern", "movie", "GREEN LANTERN", "2011"),
+    (r"blade[,: ]+trinity", "movie", "BLADE: TRINITY", "2004"),
+    (r"deadpool", "movie", "DEADPOOL", "2016"),
+    # --- timeline markers ---
+    (r"early two thousands|early 2000s", "marker", "EARLY 2000s", ""),
+    # --- motivational pull-quotes ---
+    (r"diet is 90 percent|90 percent of the battle", "quote",
+     "DIET IS 90% OF THE BATTLE", ""),
+    (r"look like i can actually fight|train to look like", "quote",
+     "TRAIN TO FIGHT, NOT JUST TO LIFT", ""),
+    (r"can't out ?train bad recovery|out train bad recovery", "quote",
+     "YOU CAN'T OUT-TRAIN BAD RECOVERY", ""),
+    (r"consistency over 15|no shortcuts|relentless discipline", "quote",
+     "NO SHORTCUTS. JUST CONSISTENCY.", ""),
 ]
 
 SKIP_CHAPTERS = {"OPEN", "HOOK", "SOURCING"}
 
 
 def build_text_events(sentences, timeline):
-    """slot -> (kind, line1, line2). One event per timeline piece."""
+    """slot -> (kind, line1, line2). One event per timeline piece.
+    Lower-thirds alternate sides; exercise labels are re-armed for every
+    new exercise so the label always matches the shot on screen."""
     def piece_at(t):
         for e in timeline:
             if e["at"] <= t < e["at"] + e["dur"] + 0.01:
@@ -602,40 +876,143 @@ def build_text_events(sentences, timeline):
     return events
 
 
-def text_filter(kind, l1, l2, dur):
-    fade = f"alpha='min(1,t/0.4)*min(1,max(0.0001,{dur:.2f}-t)/0.4)'"
-    l1 = l1.replace("'", "").replace(":", "\\:")
-    l2 = (l2 or "").replace("'", "").replace(":", "\\:")
-    if kind in ("title", "chapter"):
-        f = (f"drawbox=x=0:y=ih/2-100:w=iw:h=200:color=black@0.45:t=fill,"
-             f"drawtext=fontfile='{FONT}':text='{l1}':fontsize=76:"
-             f"fontcolor=white:x=(w-text_w)/2:y=(h/2)-70:{fade}")
+# ---------------------------------------------------------- motion graphics
+# ffmpeg can animate drawtext position and alpha per frame (via t). We use
+# that for slide-ins, staggered reveals and fade-outs; a drop shadow and a
+# red accent bar give the lower-thirds a broadcast-documentary look. Solid
+# panels are drawn per-clip - the clip cut hides their in/out, the text
+# animates on top. (True motion-tracking / behind-object masking needs
+# per-frame rotoscoping and is out of scope for an ffmpeg pass.)
+
+def _clean(s):
+    return (s or "").replace("\\", "").replace("'", "").replace(":", "\\:") \
+                    .replace("%", "\\%")
+
+
+def _alpha(dur, delay=0.0, tin=0.45, tout=0.4):
+    """Fade in after `delay`, hold, fade out before the clip ends.
+    Single-quoted so its commas are protected in the filtergraph."""
+    return (f"'if(lt(t,{delay}),0,"
+            f"min(min(1,(t-{delay})/{tin}),max(0,({dur:.2f}-t)/{tout})))'")
+
+
+def _ease(delay=0.0, tin=0.45):
+    """0 -> 1 ramp for slide-in offsets (embedded inside a quoted value)."""
+    return f"min(1,max(0,(t-{delay})/{tin}))"
+
+
+def _dt(text, size, color, x, y, alpha, weight_shadow=True):
+    sh = (":shadowcolor=black@0.75:shadowx=2:shadowy=3"
+          if weight_shadow else "")
+    return (f"drawtext=fontfile='{FONT}':text='{text}':fontsize={size}:"
+            f"fontcolor={color}:x={x}:y={y}{sh}:alpha={alpha}")
+
+
+ACCENT = "0xE50914"
+
+
+def text_filter(kind, l1, l2, dur, slot=0):
+    l1 = _clean(l1)
+    l2 = _clean(l2)
+    d = f"{dur:.2f}"
+
+    if kind == "title":
+        e = _ease(0.0, 0.5)
+        band = "drawbox=x=0:y=ih/2-120:w=iw:h=240:color=black@0.55:t=fill"
+        bar = (f"drawbox=x=iw/2-150:y=ih/2+64:w=300:h=5:"
+               f"color={ACCENT}:t=fill")
+        # title slides up into place; subtitle staggered
+        t1 = _dt(l1, 84, "white", "(w-text_w)/2",
+                 f"'(h/2)-92-34*(1-{e})'", _alpha(dur, 0.0, 0.5))
+        parts = [band, bar, t1]
         if l2:
-            f += (f",drawtext=fontfile='{FONT}':text='{l2}':fontsize=30:"
-                  f"fontcolor=0xDDDDDD:x=(w-text_w)/2:y=(h/2)+30:{fade}")
-        return f
-    if kind == "lt":
-        f = (f"drawbox=x=60:y=ih-230:w=700:h=130:color=black@0.55:t=fill,"
-             f"drawbox=x=60:y=ih-230:w=10:h=130:color=0xE50914:t=fill,"
-             f"drawtext=fontfile='{FONT}':text='{l1}':fontsize=46:"
-             f"fontcolor=white:x=95:y=h-215:{fade}")
+            e2 = _ease(0.18)
+            parts.append(_dt(l2, 32, "0xE8E8E8", "(w-text_w)/2",
+                             f"'(h/2)+22+18*(1-{e2})'",
+                             _alpha(dur, 0.18)))
+        return ",".join(parts)
+
+    if kind == "chapter":
+        e = _ease(0.1)
+        band = "drawbox=x=0:y=ih-250:w=iw:h=150:color=black@0.5:t=fill"
+        bar = f"drawbox=x=100:y=ih-250:w=9:h=150:color={ACCENT}:t=fill"
+        kicker = _dt("CHAPTER", 26, ACCENT, "134", "h-232",
+                     _alpha(dur, 0.0))
+        title = _dt(l1, 60, "white", f"'134-40*(1-{e})'", "h-192",
+                    _alpha(dur, 0.12))
+        return ",".join([band, bar, kicker, title])
+
+    if kind == "movie":
+        e = _ease(0.0, 0.5)
+        band = "drawbox=x=0:y=ih/2-90:w=iw:h=180:color=black@0.6:t=fill"
+        bar1 = f"drawbox=x=iw/2-220:y=ih/2-92:w=440:h=4:color={ACCENT}:t=fill"
+        bar2 = f"drawbox=x=iw/2-220:y=ih/2+88:w=440:h=4:color={ACCENT}:t=fill"
+        t1 = _dt(l1, 66, "white", "(w-text_w)/2",
+                 f"'(h/2)-46-24*(1-{e})'", _alpha(dur, 0.0, 0.5))
+        parts = [band, bar1, bar2, t1]
         if l2:
-            f += (f",drawtext=fontfile='{FONT}':text='{l2}':fontsize=26:"
-                  f"fontcolor=0xCCCCCC:x=95:y=h-150:{fade}")
-        return f
-    if kind == "stat":
-        f = (f"drawbox=x=iw-760:y=120:w=700:h=150:color=black@0.55:t=fill,"
-             f"drawbox=x=iw-760:y=120:w=10:h=150:color=0xE50914:t=fill,"
-             f"drawtext=fontfile='{FONT}':text='{l1}':fontsize=58:"
-             f"fontcolor=white:x=w-720:y=140:{fade}")
+            parts.append(_dt(l2, 34, ACCENT, "(w-text_w)/2", "(h/2)+30",
+                             _alpha(dur, 0.2)))
+        return ",".join(parts)
+
+    if kind == "quote":
+        e = _ease(0.05, 0.5)
+        band = "drawbox=x=0:y=ih-330:w=iw:h=200:color=black@0.55:t=fill"
+        mark = f"drawbox=x=120:y=ih-300:w=10:h=130:color={ACCENT}:t=fill"
+        t1 = _dt(l1, 50, "white", f"'170-30*(1-{e})'", "h-262",
+                 _alpha(dur, 0.15))
+        t2 = _dt("\"", 90, ACCENT, "150", "h-330", _alpha(dur, 0.0))
+        return ",".join([band, mark, t2, t1])
+
+    if kind == "marker":
+        e = _ease(0.0, 0.5)
+        t1 = _dt(l1, 120, "white@0.92", f"'(w-text_w)/2'",
+                 f"'160-30*(1-{e})'", _alpha(dur, 0.0, 0.5), False)
+        bar = f"drawbox=x=iw/2-120:y=300:w=240:h=5:color={ACCENT}:t=fill"
+        return ",".join([t1, bar])
+
+    if kind in ("stat", "lt", "ex"):
+        # corner lower-third; lt/ex alternate side by slot for variety
+        right = (kind == "stat") or (kind in ("lt", "ex") and slot % 2)
+        e = _ease(0.1)
+        if kind == "stat":
+            bw, bh, by = 720, 156, 120
+            bx = "iw-780"
+            tx, sx = "w-740", "w-740"
+        elif right:
+            bw, bh, by = 720, 130, "ih-230"
+            bx = "iw-780"
+            tx = sx = "w-740"
+        else:
+            bw, bh, by = 720, 130, "ih-230"
+            bx = "60"
+            tx = sx = "99"
+        yexpr = by if isinstance(by, str) else str(by)
+        panel = (f"drawbox=x={bx}:y={yexpr}:w={bw}:h={bh}:"
+                 f"color=black@0.58:t=fill")
+        accent = (f"drawbox=x={bx}:y={yexpr}:w=10:h={bh}:"
+                  f"color={ACCENT}:t=fill")
+        # slide direction: from the side it's anchored to
+        off = 44
+        slide = f"+{off}*(1-{e})" if right else f"-{off}*(1-{e})"
+        if kind == "stat":
+            l1y, l2y, s1, s2 = "y+26", "y+112", 62, 26
+            yb = 120
+            l1yv, l2yv = f"{yb+26}", f"{yb+108}"
+        else:
+            l1yv = "h-214"
+            l2yv = "h-150"
+            s1, s2 = 46, 26
+        a1 = _alpha(dur, 0.1)
+        parts = [panel, accent,
+                 _dt(l1, s1, "white", f"'{tx}{slide}'", l1yv, a1)]
         if l2:
-            f += (f",drawtext=fontfile='{FONT}':text='{l2}':fontsize=26:"
-                  f"fontcolor=0xCCCCCC:x=w-720:y=215:{fade}")
-        return f
-    # exercise pill, bottom-right
-    return (f"drawtext=fontfile='{FONT}':text='{l1}':fontsize=38:"
-            f"fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=18:"
-            f"x=w-text_w-80:y=h-160:{fade}")
+            parts.append(_dt(l2, s2, "0xD8D8D8", f"'{sx}{slide}'",
+                             l2yv, _alpha(dur, 0.22)))
+        return ",".join(parts)
+
+    # fallback: simple faded label
+    return _dt(l1, 40, "white", "(w-text_w)/2", "h-160", _alpha(dur, 0.0))
 
 
 # ------------------------------------------------------------ validation
@@ -666,6 +1043,20 @@ def validate(timeline, sentences, audio_dur, events):
     if total < audio_dur - 4:
         ok = False
 
+    # REQUIREMENT 1/2/6: every piece must be on-topic for the sentence it
+    # sits under. This is the primary editorial gate.
+    on = [e for e in timeline if on_topic(e["stype"], e["cat"])]
+    off = [e for e in timeline if not on_topic(e["stype"], e["cat"])]
+    trate = len(on) / max(1, len(timeline)) * 100
+    print(f"  {'OK ' if trate >= 92 else 'X  '}visuals match narration "
+          f"topic: {len(on)}/{len(timeline)} pieces ({trate:.0f}%)")
+    if trate < 92:
+        ok = False
+    if off:
+        badcnt = Counter((e["stype"], e["cat"]) for e in off)
+        print("      off-topic pieces: " + ", ".join(
+            f"{st}->{ct}x{n}" for (st, ct), n in badcnt.most_common(8)))
+
     ryan_sents = [e for e in timeline
                   if e["stype"] in ("ryan", "deadpool", "coach")]
     on_subject = [e for e in ryan_sents
@@ -686,20 +1077,33 @@ def validate(timeline, sentences, audio_dur, events):
     print(f"  OK  text animations: {len(events)} "
           f"(title, chapters, lower-thirds, stats, exercise labels)")
 
-    # AUDIO-VISUAL SYNC: sentences that name a specific exercise must
-    # show that exercise (or the closest available footage).
+    # AUDIO-VISUAL SYNC: sentences that name a specific exercise must show
+    # that exercise, or - when no footage of it exists in the library - the
+    # same movement family (a deadlift cue may take pull footage, never a
+    # red-carpet shot).
+    def ex_ok(e):
+        w, g = e.get("ex_want"), e.get("ex_got")
+        if not w:
+            return True
+        if g == w:
+            return True
+        return bool(g and EXERCISE_FAMILY.get(g) == EXERCISE_FAMILY.get(w))
+
     ex_pieces = [e for e in timeline if e.get("ex_want")]
     exact = [e for e in ex_pieces if e.get("ex_got") == e.get("ex_want")]
+    fam = [e for e in ex_pieces if ex_ok(e)]
     if ex_pieces:
-        rate = len(exact) / len(ex_pieces) * 100
-        print(f"  {'OK ' if rate >= 50 else '!  '}exercise sync: "
-              f"{len(exact)}/{len(ex_pieces)} exercise mentions show the "
-              f"exact exercise ({rate:.0f}%)")
-        missing = sorted({e["ex_want"] for e in ex_pieces
-                          if e.get("ex_got") != e.get("ex_want")})
-        if missing:
-            print(f"      exact footage exhausted/absent for: "
-                  f"{', '.join(missing[:10])}")
+        er = len(exact) / len(ex_pieces) * 100
+        fr = len(fam) / len(ex_pieces) * 100
+        print(f"  {'OK ' if fr >= 85 else 'X  '}exercise sync: {len(exact)} "
+              f"exact + {len(fam) - len(exact)} same-family = {len(fam)}/"
+              f"{len(ex_pieces)} ({fr:.0f}% on-movement, {er:.0f}% exact)")
+        if fr < 85:
+            ok = False
+        nofam = sorted({e["ex_want"] for e in ex_pieces if not ex_ok(e)})
+        if nofam:
+            print(f"      no matching-family footage for: "
+                  f"{', '.join(nofam[:10])}")
 
     nut = [e for e in timeline if e["stype"] == "nutrition"]
     if nut:
@@ -735,7 +1139,8 @@ def render(timeline, events, audio_dur):
                    "s=1920x1080:fps=30")
         ev = events.get(e["slot"])
         if ev:
-            vf = vf + "," + text_filter(ev[0], ev[1], ev[2], e["dur"])
+            vf = vf + "," + text_filter(ev[0], ev[1], ev[2], e["dur"],
+                                        e["slot"])
         subprocess.run(
             ["ffmpeg", "-ss", str(e["in"]), "-i", e["src"],
              "-t", str(e["dur"]), "-vf", vf, "-an",

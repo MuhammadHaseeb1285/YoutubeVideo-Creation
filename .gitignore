@@ -1,5 +1,22 @@
-# Only Python sources (and README) are tracked
+# Track source only; ignore media, caches and generated output.
 *
+!*/
 !*.py
+!*.html
+!*.css
+!*.js
 !.gitignore
 !README.md
+
+# never track archived binaries, media or working data
+legacy/archive_ryan/
+assets/
+cache/
+output/
+logs/
+transcripts/
+projects/
+config.json
+*.mp3
+*.mp4
+*.wav
