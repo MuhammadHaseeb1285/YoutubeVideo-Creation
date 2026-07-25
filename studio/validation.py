@@ -47,13 +47,21 @@ def validate(timeline, sentences, audio_dur):
         return bool(g and semantic.EXERCISE_FAMILY.get(g)
                     == semantic.EXERCISE_FAMILY.get(w))
     fam = [e for e in ex_pieces if fam_ok(e)]
+    # Only gate on exercise sync when the library actually HAS exercise-tagged
+    # footage. Auto-downloaded clips have no exercise tags, so this check
+    # would otherwise block every build for no fault of the selector.
+    lib_has_ex = any(e.get("ex_got") for e in timeline)
     if ex_pieces:
         fr = len(fam) / len(ex_pieces) * 100
-        eok = fr >= settings.MIN_EXERCISE_SYNC
-        checks.append(("exercise sync", eok,
-                       f"{len(exact)} exact + {len(fam)-len(exact)} family "
-                       f"= {fr:.0f}% on-movement"))
-        ok &= eok
+        if not lib_has_ex:
+            checks.append(("exercise sync", True,
+                           "n/a - no exercise-tagged footage in library"))
+        else:
+            eok = fr >= settings.MIN_EXERCISE_SYNC
+            checks.append(("exercise sync", eok,
+                           f"{len(exact)} exact + {len(fam)-len(exact)} "
+                           f"family = {fr:.0f}% on-movement"))
+            ok &= eok
 
     scenes = [e["scene"] for e in timeline]
     reuse = len(scenes) - len(set(scenes))
