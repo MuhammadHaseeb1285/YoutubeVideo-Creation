@@ -292,26 +292,29 @@ def text_filter(kind, l1, l2, dur, slot=0):
         return ",".join([t1, bar])
 
     if kind == "list":
-        # numbered card that reveals row by row (the hero graphic)
-        items = [_clean(x) for x in (l2 or "").split("||") if x.strip()][:4]
+        # full-screen dark SLATE with a centered numbered list that reveals
+        # row by row (matches the reference's CORE CIRCUIT card)
+        items = [_clean(x) for x in (l2 or "").split("||") if x.strip()][:5]
         cnt = max(1, len(items))
-        px, py, pw = 130, 250, 720
-        ph = 132 + cnt * 96
-        panel = (f"drawbox=x={px-42}:y={py-42}:w={pw}:h={ph}:"
-                 f"color=black@0.66:t=fill")
-        bar = f"drawbox=x={px-42}:y={py-42}:w=9:h={ph}:color={ACCENT}:t=fill"
-        tx, ty = _enter("left", str(px), str(py), 0.05, 0.45)
-        parts = [panel, bar, _dt(l1, 52, "white", tx, ty, _alpha(dur, 0.05))]
+        scrim = "drawbox=x=0:y=0:w=iw:h=ih:color=black@0.9:t=fill"
+        titley = 300 - cnt * 8
+        e0 = _ease(0.05, 0.5)
+        title = _dt(l1, 66, "white", "(w-text_w)/2",
+                    f"'{titley}+22*(1-{e0})'", _alpha(dur, 0.05, 0.5))
+        bar = (f"drawbox=x=iw/2-150:y={titley+86}:w=300:h=5:"
+               f"color={ACCENT}:t=fill")
+        parts = [scrim, title, bar]
+        bx, ry0 = 650, titley + 160
         for i, it in enumerate(items):
-            ry = py + 96 + i * 96
-            d = 0.4 + i * 0.3
+            ry = ry0 + i * 98
+            d = 0.4 + i * 0.28
             e = _ease(d, 0.4)
             sx = f"-46*(1-{e})"
-            badge = _dt("●", 56, ACCENT, f"'{px}{sx}'", f"'{ry-8}'",
+            badge = _dt("●", 58, ACCENT, f"'{bx}{sx}'", f"'{ry-8}'",
                         _alpha(dur, d))
-            num = _dt(str(i + 1), 26, "white", f"'{px+18}{sx}'",
+            num = _dt(str(i + 1), 26, "white", f"'{bx+19}{sx}'",
                       f"'{ry+8}'", _alpha(dur, d), False)
-            txt = _dt(it, 34, "white", f"'{px+82}{sx}'", f"'{ry+2}'",
+            txt = _dt(it, 36, "white", f"'{bx+86}{sx}'", f"'{ry+2}'",
                       _alpha(dur, d))
             parts += [badge, num, txt]
         return ",".join(parts)
