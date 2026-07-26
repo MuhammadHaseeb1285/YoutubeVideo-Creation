@@ -122,34 +122,47 @@ def build_contact_sheets(progress_cb=None):
 
 
 def _prompt(subject, coach, ids):
-    coach_line = (f"COACH/TRAINER (a different person from {subject}):\n"
-                  f"  coach_gym, coach_talk\n") if coach else ""
-    return f"""You are labeling frames from a fitness documentary about
-{subject}. The image is a grid of video frames, read left-to-right, top-to-
-bottom. Each frame has a red "#<id>" label in its top-left corner.
+    coach_line = (f"COACH/TRAINER (the actual trainer of {subject}, a "
+                  f"different specific person):\n  coach_gym, coach_talk\n"
+                  ) if coach else ""
+    return f"""You are labeling frames from a documentary about {subject}.
+The image is a grid of video frames, read left-to-right, top-to-bottom.
+Each frame has a red "#<id>" label in its top-left corner.
 
-Classify EACH labeled frame by what is actually visible in it, using exactly
-one category from this list:
+THE MOST IMPORTANT RULE - SUBJECT DOMINANCE:
+Use a SUBJECT category ONLY when {subject} is clearly the MAIN person in the
+frame - recognisably {subject}, in focus, occupying most of the frame. If the
+dominant person is SOMEONE ELSE (an interviewer, podcast host, another guest,
+an audience member, a reporter, or an unrelated person), or if {subject} is
+absent, tiny, in the background, or only barely visible, mark it "x". When in
+doubt about whether it is really {subject} and whether they dominate the
+frame, mark it "x". We only want shots that are clearly about {subject}.
 
-SUBJECT ({subject}) on camera talking / posing / in public:
+Classify EACH labeled frame using exactly one category:
+
+SUBJECT ({subject}) is the main person, talking / posing / in public:
   ryan_interview, ryan_press, ryan_event
-SUBJECT training or showing physique:
+SUBJECT ({subject}) training or showing physique:
   ryan_gym, ryan_photoshoot, ryan_abs, ryan_shirtless
-SUBJECT other:
+SUBJECT ({subject}) other (film role, behind the scenes, candid):
   ryan_movie, ryan_bts, ryan_photo, ryan_outdoor, ryan_home
-{coach_line}GENERIC EXERCISE B-ROLL (anyone training, no identifiable celebrity):
+{coach_line}GENERIC EXERCISE B-ROLL (a non-famous person training, use only as backup):
   chest, back, legs, shoulders, arms, cardio, equipment, recovery
 NUTRITION (food, meals, cooking, supplements):
   food
-UNUSABLE (mark these so they are excluded):
-  x  = graphics, text slides, titles, logos, channel watermarks, subscribe
-       screens, social-media icons, cartoons, or a woman as the main subject
+UNUSABLE - mark "x":
+  graphics, text slides, titles, logos, channel watermarks, subscribe/like
+  screens, social-media or Shorts/Reels UI, cartoons, OR any frame whose main
+  person is NOT {subject} (interviewer/host/guest/audience/other), OR where
+  {subject} is absent or barely visible.
 
 For each id return a 4-item array: [category, gender, use, quality]
-  - category: one exact string from the list above (or "x")
-  - gender: "m", "f", or "n" (none/unknown)
-  - use: 1 if usable footage, 0 if it is "x" / unusable
-  - quality: 0 (poor/blurry), 1 (ok), or 2 (clean, cinematic, high quality)
+  - category: one exact string above, or "x"
+  - gender: "m", "f", or "n"
+  - use: 1 if usable AND {subject} clearly dominates (or it is pure B-roll/
+         food); 0 for anything "x"
+  - quality: 0 (poor/blurry/low-res/watermarked), 1 (ok), 2 (clean, sharp,
+         cinematic, {subject} large and centred)
 
 The ids on this sheet are: {ids}
 Return ONLY a JSON object mapping each id (as a string) to its 4-item array."""
