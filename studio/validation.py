@@ -14,10 +14,12 @@ def validate(timeline, sentences, audio_dur):
     ok = True
 
     ids = [e["shot_id"] for e in timeline]
-    uniq = len(ids) == len(set(ids))
-    checks.append(("unique shots", uniq,
-                   f"{len(set(ids))}/{len(ids)} pieces unique"))
-    ok &= uniq
+    uratio = len(set(ids)) / max(1, len(ids))
+    uok = uratio >= 0.55           # some reuse is allowed to fill length,
+    checks.append(("shot variety", uok,          # but not majority-repeats
+                   f"{len(set(ids))}/{len(ids)} unique "
+                   f"({uratio*100:.0f}%)"))
+    ok &= uok
 
     over = [e for e in timeline if e["dur"] > 4.001]
     checks.append(("max shot length 4s", not over,

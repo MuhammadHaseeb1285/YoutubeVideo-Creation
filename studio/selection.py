@@ -11,13 +11,21 @@ from . import settings, semantic
 
 class Selector:
     def __init__(self, shots):
-        self.unused = {s["id"]: s for s in shots}
+        self.all = {s["id"]: s for s in shots}
+        self.unused = dict(self.all)
         self.scene_used = Counter()
         self.scene_last_slot = {}
         self.last_src = []
         self.last_cat = []
         self.slot = 0
         self.total = len(shots)
+
+    def refill(self):
+        """Allow shots to be reused once the fresh pool is exhausted, so the
+        timeline can still reach the full narration length. Repetition
+        penalties (scene reuse + spacing) keep repeats spread out and favour
+        the least-recently-used footage."""
+        self.unused = dict(self.all)
 
     def penalty(self, sh):
         p = 0.0

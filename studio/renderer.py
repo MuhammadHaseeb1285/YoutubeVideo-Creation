@@ -28,6 +28,10 @@ def render(timeline, events, audio_dur, voiceover, out_path, progress_cb=None):
             vf += (f",zoompan=z='1+0.06*on/{frames}':d=1:"
                    "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                    "s=1920x1080:fps=30")
+        # soft fade in/out on every shot -> smoother, less "stitched" cuts
+        d = max(0.4, e["dur"])
+        vf += (f",fade=t=in:st=0:d=0.12,"
+               f"fade=t=out:st={d - 0.12:.2f}:d=0.12")
         ev = events.get(e["slot"])
         if ev:
             vf += "," + motion_graphics.text_filter(ev[0], ev[1], ev[2],

@@ -33,8 +33,11 @@ def build(sentences, shots, progress_cb=None, max_clip=None):
         t_cursor = sent["start"] - carry
         while remaining > 0.35:
             sh = sel.pick(sent["type"], sent.get("ex"))
-            if sh is None:
-                return timeline
+            if sh is None:               # fresh pool exhausted - allow reuse
+                sel.refill()             # (spaced) so we fill the full length
+                sh = sel.pick(sent["type"], sent.get("ex"))
+                if sh is None:
+                    return timeline
             cap = _cap(sh["cat"], max_clip)
             piece = min(cap, sh["len"], remaining)
             piece = max(piece, min(1.0, remaining))

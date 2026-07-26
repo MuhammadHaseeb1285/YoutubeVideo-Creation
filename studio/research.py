@@ -195,14 +195,19 @@ def build_queries(name: str, coach: str, slug: str,
     the film can show the moments that required each transformation."""
     q = [
         (f"{name} workout training routine", f"{slug}_gym_a"),
-        (f"{name} gym training footage", f"{slug}_gym_b"),
-        (f"{name} body transformation", f"{slug}_gym_c"),
-        (f"{name} physique training", f"{slug}_gym_d"),
+        (f"{name} gym training session", f"{slug}_gym_b"),
+        (f"{name} body transformation journey", f"{slug}_gym_c"),
+        (f"{name} physique bodybuilding", f"{slug}_gym_d"),
+        (f"{name} lifting weights gym", f"{slug}_gym_e"),
         (f"{name} training behind the scenes", f"{slug}_bts_a"),
         (f"{name} transformation before after", f"{slug}_bts_b"),
         (f"{name} interview fitness training", f"{slug}_int_a"),
         (f"{name} interview", f"{slug}_int_b"),
+        (f"{name} podcast", f"{slug}_int_d"),
+        (f"{name} motivational speech fitness", f"{slug}_int_e"),
         (f"{name} diet nutrition what he eats", f"{slug}_diet_a"),
+        (f"{name} meal prep diet plan", f"{slug}_diet_b"),
+        (f"{name} shirtless abs physique", f"{slug}_phys_a"),
     ]
     extra = {
         "actor": [(f"{name} movie role training", f"{slug}_bts_c"),

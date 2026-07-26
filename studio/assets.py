@@ -12,51 +12,56 @@ from . import settings, logs
 
 
 # ------------------------------------------------------------ download
-def download_one(query: str, out, attempts: int = 4) -> bool:
+# Prefer real HD (up to 1080p), merged to mp4. Avoids the old 720p cap so
+# footage is sharp, not blurry/upscaled.
+_HD_FMT = ("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/"
+           "best[height<=1080][ext=mp4]/best[ext=mp4]/best")
+
+
+def download_one(query: str, out, index: int = 1) -> bool:
+    """Download the `index`-th search result for `query` to `out` in HD."""
     if out.exists() and out.stat().st_size > 500_000:
         return True
-    filters = ["duration<720", "duration<1500", "duration<2400", None]
-    for i in range(1, attempts + 1):
-        flt = filters[min(i - 1, len(filters) - 1)]
-        args = ["yt-dlp", "-f", "best[ext=mp4][height<=720]/best[ext=mp4]",
-                "--no-playlist", "-o", str(out), "--playlist-items", str(i)]
-        if flt:
-            args += ["--match-filter", flt]
-        args.append(f"ytsearch{attempts}:{query}")
-        try:
-            subprocess.run(args, capture_output=True, text=True,
-                           timeout=240 + i * 60)
-        except Exception:
-            pass
-        if out.exists() and out.stat().st_size > 500_000:
-            return True
+    args = ["yt-dlp", "-f", _HD_FMT, "--no-playlist",
+            "--merge-output-format", "mp4", "-o", str(out),
+            "--playlist-items", str(index),
+            "--match-filter", "duration>=40 & duration<=2400",
+            f"ytsearch{index + 3}:{query}"]
+    try:
+        subprocess.run(args, capture_output=True, text=True, timeout=360)
+    except Exception:
+        pass
+    ok = out.exists() and out.stat().st_size > 500_000
+    if not ok:
         for part in out.parent.glob(out.stem + "*"):
             try:
                 part.unlink()
             except OSError:
                 pass
-        logs.log(f"  {out.stem}: attempt {i} failed, trying next result")
-    return False
+    return ok
 
 
-def download(queries: list):
+def download(queries: list, per_query: int = 2):
+    """Grab several HD clips per search so there is enough unique footage to
+    fill a full-length documentary without repeating shots."""
     settings.ASSETS_VIDEO.mkdir(parents=True, exist_ok=True)
-    got = 0
-    for i, (query, stem) in enumerate(queries):
-        out = settings.ASSETS_VIDEO / f"{stem}.mp4"
-        logs.progress(100 * i / max(1, len(queries)),
-                      f"downloading {stem}")
-        if out.exists() and out.stat().st_size > 500_000:
-            logs.log(f"  [=] {stem} already present")
-            got += 1
-            continue
-        logs.log(f"  [*] {stem}: {query}")
-        if download_one(query, out):
-            logs.log(f"      OK ({out.stat().st_size/1e6:.0f} MB)")
-            got += 1
-        else:
-            logs.log(f"      FAILED after retries - continuing")
-    logs.log(f"[OK] {got}/{len(queries)} videos ready")
+    got, total = 0, max(1, len(queries) * per_query)
+    for qi, (query, stem) in enumerate(queries):
+        logs.log(f"  [*] {query}")
+        for k in range(per_query):
+            out = settings.ASSETS_VIDEO / f"{stem}_{k}.mp4"
+            logs.progress(100 * (qi * per_query + k) / total,
+                          f"downloading {stem}_{k}")
+            if out.exists() and out.stat().st_size > 500_000:
+                got += 1
+                continue
+            if download_one(query, out, index=k + 1):
+                logs.log(f"      OK {stem}_{k} "
+                         f"({out.stat().st_size/1e6:.0f} MB HD)")
+                got += 1
+            else:
+                logs.log(f"      no clip {k + 1} for this search")
+    logs.log(f"[OK] {got} HD clips downloaded")
     return got
 
 
