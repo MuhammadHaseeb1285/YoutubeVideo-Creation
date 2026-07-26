@@ -18,15 +18,24 @@ _HD_FMT = ("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/"
            "best[height<=1080][ext=mp4]/best[ext=mp4]/best")
 
 
-def download_one(query: str, out, index: int = 1) -> bool:
-    """Download the `index`-th search result for `query` to `out` in HD."""
-    if out.exists() and out.stat().st_size > 500_000:
-        return True
+def _search_ids(query: str, n: int = 6) -> list:
+    """IDs of the top n YouTube results for a query (fast, no download)."""
+    try:
+        r = subprocess.run(
+            ["yt-dlp", "--flat-playlist", "--print", "id",
+             f"ytsearch{n}:{query}"],
+            capture_output=True, text=True, timeout=90)
+        return [l.strip() for l in (r.stdout or "").splitlines()
+                if l.strip()]
+    except Exception:
+        return []
+
+
+def _download_id(vid: str, out) -> bool:
     args = ["yt-dlp", "-f", _HD_FMT, "--no-playlist",
             "--merge-output-format", "mp4", "-o", str(out),
-            "--playlist-items", str(index),
             "--match-filter", "duration>=40 & duration<=2400",
-            f"ytsearch{index + 3}:{query}"]
+            f"https://www.youtube.com/watch?v={vid}"]
     try:
         subprocess.run(args, capture_output=True, text=True, timeout=360)
     except Exception:
@@ -41,27 +50,72 @@ def download_one(query: str, out, index: int = 1) -> bool:
     return ok
 
 
+def _dedupe_videos() -> int:
+    """Delete byte-identical video files (same content downloaded under two
+    different search stems)."""
+    seen, removed = {}, 0
+    for p in sorted(settings.ASSETS_VIDEO.glob("*.mp4")):
+        h = _quick_hash(p)
+        if h is None:
+            continue
+        if h in seen:
+            try:
+                p.unlink()
+                removed += 1
+            except OSError:
+                pass
+        else:
+            seen[h] = p
+    return removed
+
+
 def download(queries: list, per_query: int = 2):
-    """Grab several HD clips per search so there is enough unique footage to
-    fill a full-length documentary without repeating shots."""
+    """Grab several HD clips per search. A registry of YouTube video IDs
+    guarantees the same video is never downloaded twice across different
+    searches; a content-hash pass cleans any remaining duplicates."""
+    import json as _json
     settings.ASSETS_VIDEO.mkdir(parents=True, exist_ok=True)
+    settings.CACHE.mkdir(parents=True, exist_ok=True)
+    reg_file = settings.CACHE / "yt_ids.json"
+    reg = set()
+    if reg_file.exists():
+        try:
+            reg = set(_json.loads(reg_file.read_text()))
+        except Exception:
+            reg = set()
+
     got, total = 0, max(1, len(queries) * per_query)
     for qi, (query, stem) in enumerate(queries):
+        logs.progress(100 * qi * per_query / total, f"searching: {query}")
+        # count clips already on disk for this stem
+        have = [p for p in settings.ASSETS_VIDEO.glob(f"{stem}_*.mp4")
+                if p.stat().st_size > 500_000]
+        if len(have) >= per_query:
+            got += len(have)
+            continue
         logs.log(f"  [*] {query}")
-        for k in range(per_query):
-            out = settings.ASSETS_VIDEO / f"{stem}_{k}.mp4"
-            logs.progress(100 * (qi * per_query + k) / total,
-                          f"downloading {stem}_{k}")
-            if out.exists() and out.stat().st_size > 500_000:
-                got += 1
-                continue
-            if download_one(query, out, index=k + 1):
-                logs.log(f"      OK {stem}_{k} "
+        ids = [v for v in _search_ids(query) if v not in reg]
+        picked = len(have)
+        for vid in ids:
+            if picked >= per_query:
+                break
+            out = settings.ASSETS_VIDEO / f"{stem}_{picked}.mp4"
+            logs.progress(100 * (qi * per_query + picked) / total,
+                          f"downloading {stem}_{picked}")
+            reg.add(vid)                # claim the id even if it fails
+            if _download_id(vid, out):
+                logs.log(f"      OK {stem}_{picked} "
                          f"({out.stat().st_size/1e6:.0f} MB HD)")
+                picked += 1
                 got += 1
-            else:
-                logs.log(f"      no clip {k + 1} for this search")
-    logs.log(f"[OK] {got} HD clips downloaded")
+                reg_file.write_text(_json.dumps(sorted(reg)))
+        if picked == len(have):
+            logs.log("      no new unique clip for this search")
+    reg_file.write_text(_json.dumps(sorted(reg)))
+    removed = _dedupe_videos()
+    if removed:
+        logs.log(f"  removed {removed} duplicate download(s)")
+    logs.log(f"[OK] {got} unique HD clips ready")
     return got
 
 

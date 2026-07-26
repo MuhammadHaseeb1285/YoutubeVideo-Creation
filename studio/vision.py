@@ -86,14 +86,60 @@ def _subject_photo(subject: str, hint: str = "", client=None):
                 urls.append(u)
     except Exception:
         pass
+    bua = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 "
+           "Safari/537.36", "Accept-Language": "en"}
+    # For creators the most reliable photo on the internet is their own
+    # YouTube channel avatar - grab og:image from the channels behind the
+    # top search results for their name.
+    try:
+        import re as _re
+        r = subprocess.run(
+            ["yt-dlp", "--flat-playlist", "--print", "channel_url",
+             f"ytsearch4:{subject}"],
+            capture_output=True, text=True, timeout=90)
+        seen = set()
+        for cu in [l.strip() for l in (r.stdout or "").splitlines()
+                   if l.strip().startswith("http")]:
+            if cu in seen:
+                continue
+            seen.add(cu)
+            try:
+                page = requests.get(cu, headers=bua, timeout=15).text
+                m = _re.search(r'property="og:image" content="([^"]+)"',
+                               page)
+                if m:
+                    urls.append(m.group(1))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    # Image search (DuckDuckGo images API), profession-qualified to avoid
+    # homonyms (e.g. the Islamic month 'Rajab')
+    try:
+        import re as _re
+        q = f"{subject} {hint}".strip()
+        s = requests.Session()
+        s.headers.update(bua)
+        r = s.get("https://duckduckgo.com/", params={"q": q}, timeout=15)
+        m = (_re.search(r"vqd=([\d-]+)", r.text)
+             or _re.search(r"vqd='([\d-]+)'", r.text)
+             or _re.search(r'vqd="([\d-]+)"', r.text))
+        if m:
+            r2 = s.get("https://duckduckgo.com/i.js",
+                       params={"l": "us-en", "o": "json", "q": q,
+                               "vqd": m.group(1)}, timeout=15)
+            for it in (r2.json().get("results") or [])[:6]:
+                u = it.get("image", "")
+                if u:
+                    urls.append(u)
+    except Exception:
+        pass
+    # last resort: Bing image results
     try:
         import html as _html
         import json as _json
         import re as _re
-        bua = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-               "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 "
-               "Safari/537.36", "Accept-Language": "en"}
-        # profession-qualified query avoids homonyms (e.g. 'Rajab' month)
         q = f'"{subject}" {hint} face photo'.replace("  ", " ")
         r = requests.get("https://www.bing.com/images/search",
                          params={"q": q}, headers=bua, timeout=15)
@@ -124,6 +170,11 @@ def _subject_photo(subject: str, hint: str = "", client=None):
             return out
         except Exception:
             continue
+    try:
+        if tmp.exists():
+            tmp.unlink()                 # never leave a rejected candidate
+    except OSError:
+        pass
     logs.log("vision: no reference photo found - identity check will rely "
              "on Gemini's own knowledge of the subject", "error")
     return None
