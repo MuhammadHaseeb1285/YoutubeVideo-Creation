@@ -135,9 +135,21 @@ def generate(params: dict) -> dict:
         logs.metric("assets", inv)
         logs.log(f"assets: {inv['videos']} videos, {inv['images']} images")
 
-        # 3 - INDEX
+        # 3 - INDEX (scene detection, then classify each scene BY CONTENT
+        # with Gemini Vision so footage matches the narration for real).
         logs.stage(3, len(STAGES), "Indexing")
         indexer.index_videos(progress_cb=lambda p, d: logs.progress(p, d))
+        from . import vision
+        try:
+            vision.auto_tag(name or "the subject", coach,
+                            progress_cb=lambda p, d: logs.progress(p, d))
+        except vision.NoVisionKey:
+            logs.log("no Gemini key found - matching footage by FILENAME "
+                     "only, so sync will be approximate. Add a free Gemini "
+                     "key (gemini_key.txt) for content-accurate sync.",
+                     "error")
+        except Exception as e:
+            logs.log(f"vision tagging failed ({e}); using filename tags")
         shots, dropped = indexer.build_shot_db()
         logs.metric("shots", len(shots))
         logs.log(f"shot database: {len(shots)} shots ({dropped} dropped)")
