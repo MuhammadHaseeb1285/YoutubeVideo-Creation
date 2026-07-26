@@ -28,6 +28,9 @@ MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 COLS, ROWS = 4, 5
 CELL_W, CELL_H = 320, 180
 PER_SHEET = COLS * ROWS
+# bump when the classification prompt changes so stale cached tags
+# (made with a weaker prompt) are re-generated instead of reused
+TAGS_VERSION = 3
 
 
 class NoVisionKey(Exception):
@@ -41,6 +44,89 @@ def _key():
         if kf.exists():
             k = kf.read_text(encoding="utf-8").strip()
     return k
+
+
+def _photo_is_portrait(img_path, subject, client):
+    """Ask Gemini whether a candidate image is a real portrait of a person
+    (not a graphic / poster / text image / logo / wrong-topic picture)."""
+    try:
+        from PIL import Image
+        r = client.models.generate_content(
+            model=MODEL,
+            contents=[f"Answer only YES or NO. Is this image a clear photo "
+                      f"of a single real person (a portrait or candid shot "
+                      f"showing their face) - suitable as a reference photo "
+                      f"of the public figure '{subject}'? Answer NO for "
+                      f"graphics, posters, text images, logos, calendars, "
+                      f"cartoons or group photos.",
+                      Image.open(img_path)])
+        return "YES" in (r.text or "").upper()
+    except Exception:
+        return True     # if validation fails, don't block the pipeline
+
+
+def _subject_photo(subject: str, hint: str = "", client=None):
+    """Download a verified reference photo of the celebrity (their visual
+    profile). Wikipedia lead image first, then Bing image results with a
+    profession-qualified query; each candidate is validated as a real
+    portrait before being accepted."""
+    out = settings.CACHE / "subject_ref.jpg"
+    if out.exists() and out.stat().st_size > 5000:
+        return out
+    import requests
+    ua = {"User-Agent": "DocumentaryStudio/1.0"}
+    urls = []
+    try:
+        r = requests.get(
+            "https://en.wikipedia.org/api/rest_v1/page/summary/"
+            + subject.replace(" ", "_"), headers=ua, timeout=15).json()
+        for k in ("originalimage", "thumbnail"):
+            u = (r.get(k) or {}).get("source")
+            if u:
+                urls.append(u)
+    except Exception:
+        pass
+    try:
+        import html as _html
+        import json as _json
+        import re as _re
+        bua = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+               "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 "
+               "Safari/537.36", "Accept-Language": "en"}
+        # profession-qualified query avoids homonyms (e.g. 'Rajab' month)
+        q = f'"{subject}" {hint} face photo'.replace("  ", " ")
+        r = requests.get("https://www.bing.com/images/search",
+                         params={"q": q}, headers=bua, timeout=15)
+        for attr in _re.findall(r'class="iusc"[^>]*m="([^"]+)"', r.text)[:8]:
+            try:
+                mu = _json.loads(_html.unescape(attr)).get("murl", "")
+                if mu.lower().split("?")[0].endswith((".jpg", ".jpeg",
+                                                      ".png", ".webp")):
+                    urls.append(mu)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    tmp = settings.CACHE / "_ref_candidate.jpg"
+    for u in urls:
+        try:
+            img = requests.get(u, headers=ua, timeout=15).content
+            if len(img) <= 5000:
+                continue
+            tmp.write_bytes(img)
+            if client is not None and not _photo_is_portrait(tmp, subject,
+                                                             client):
+                logs.log(f"  rejected non-portrait candidate: {u[:60]}")
+                continue
+            tmp.replace(out)
+            logs.log(f"vision: subject reference photo saved "
+                     f"({len(img)//1000} KB)")
+            return out
+        except Exception:
+            continue
+    logs.log("vision: no reference photo found - identity check will rely "
+             "on Gemini's own knowledge of the subject", "error")
+    return None
 
 
 def _scenes_from_index():
@@ -121,22 +207,29 @@ def build_contact_sheets(progress_cb=None):
     return sheet_paths, cells
 
 
-def _prompt(subject, coach, ids):
+def _prompt(subject, coach, ids, has_ref):
     coach_line = (f"COACH/TRAINER (the actual trainer of {subject}, a "
                   f"different specific person):\n  coach_gym, coach_talk\n"
                   ) if coach else ""
+    ref_line = (f"The FIRST image is a reference photo of {subject}, to "
+                f"HELP you recognise them. Combine it with your own "
+                f"knowledge of {subject}: their appearance can differ a lot "
+                f"across years, films and settings (younger/older, beard or "
+                f"clean-shaven, different hair, costumes, on stage, in a "
+                f"movie role). The SECOND image is the grid to classify.\n\n"
+                ) if has_ref else ""
     return f"""You are labeling frames from a documentary about {subject}.
-The image is a grid of video frames, read left-to-right, top-to-bottom.
-Each frame has a red "#<id>" label in its top-left corner.
+{ref_line}The grid image contains video frames, read left-to-right, top-to-
+bottom. Each frame has a red "#<id>" label in its top-left corner.
 
 THE MOST IMPORTANT RULE - SUBJECT DOMINANCE:
-Use a SUBJECT category ONLY when {subject} is clearly the MAIN person in the
-frame - recognisably {subject}, in focus, occupying most of the frame. If the
-dominant person is SOMEONE ELSE (an interviewer, podcast host, another guest,
-an audience member, a reporter, or an unrelated person), or if {subject} is
-absent, tiny, in the background, or only barely visible, mark it "x". When in
-doubt about whether it is really {subject} and whether they dominate the
-frame, mark it "x". We only want shots that are clearly about {subject}.
+Use a SUBJECT category when {subject} (at any age / in any look, including
+movie roles) is the MAIN person in the frame. Mark a frame "x" if the
+dominant person is CLEARLY someone else - an interviewer, podcast host,
+another guest, a reporter, an audience member, or an unrelated person - or
+if {subject} is absent, tiny, or only barely visible in the background. If
+a frame shows {subject} together with others but {subject} is the focus,
+that still counts as SUBJECT footage.
 
 Classify EACH labeled frame using exactly one category:
 
@@ -168,21 +261,26 @@ The ids on this sheet are: {ids}
 Return ONLY a JSON object mapping each id (as a string) to its 4-item array."""
 
 
-def auto_tag(subject, coach="", progress_cb=None):
+def auto_tag(subject, coach="", progress_cb=None, hint=""):
     """Classify every scene's real content with Gemini. Writes
     vision_tags.json. Returns the number of scenes tagged."""
     key = _key()
     if not key:
         raise NoVisionKey("no GEMINI_API_KEY / gemini_key.txt")
-    # reuse cached tags when this project's scenes are already classified
+    # reuse cached tags only when made with the CURRENT prompt version
     scenes = _scenes_from_index()
     if settings.VISION_TAGS.exists() and settings.SHEETS_MAP.exists():
         try:
             existing = json.loads(settings.VISION_TAGS.read_text())
-            if scenes and len(existing) >= len(scenes) * 0.9:
+            ver = existing.pop("__version__", 0)
+            if scenes and ver == TAGS_VERSION \
+                    and len(existing) >= len(scenes) * 0.9:
                 logs.log(f"vision: using cached content tags for "
-                         f"{len(existing)} scenes")
+                         f"{len(existing)} scenes (v{ver})")
                 return len(existing)
+            if ver != TAGS_VERSION:
+                logs.log("vision: cached tags are from an older prompt - "
+                         "re-classifying with identity verification")
         except Exception:
             pass
     try:
@@ -197,26 +295,58 @@ def auto_tag(subject, coach="", progress_cb=None):
     if not sheet_paths:
         raise RuntimeError("no scenes to classify")
     client = genai.Client(api_key=key)
+    ref_path = _subject_photo(subject, hint, client)
+    ref_img = Image.open(ref_path) if ref_path else None
+
+    def _classify(sp, ids, use_ref):
+        contents = [_prompt(subject, coach, ids, use_ref)]
+        if use_ref:
+            contents.append(ref_img)
+        contents.append(Image.open(sp))
+        last = None
+        for attempt in range(3):
+            try:
+                resp = client.models.generate_content(model=MODEL,
+                                                      contents=contents)
+                raw = (resp.text or "").strip()
+                m = re.search(r"\{.*\}", raw, re.S)
+                if m:
+                    out = {}
+                    for k, v in json.loads(m.group(0)).items():
+                        if isinstance(v, list) and len(v) >= 4:
+                            out[str(k)] = [v[0], v[1], int(v[2]), int(v[3])]
+                    return out
+                last = "no JSON in response"
+            except Exception as e:
+                last = e
+                import time
+                time.sleep(8 * (attempt + 1))    # back off on rate limits
+        raise RuntimeError(str(last))
+
     tags = {}
+    import time
     for i, (sp, ids) in enumerate(sheet_paths):
         try:
-            img = Image.open(sp)
-            resp = client.models.generate_content(
-                model=MODEL, contents=[_prompt(subject, coach, ids), img])
-            raw = (resp.text or "").strip()
-            m = re.search(r"\{.*\}", raw, re.S)
-            if m:
-                part = json.loads(m.group(0))
-                for k, v in part.items():
-                    if isinstance(v, list) and len(v) >= 4:
-                        tags[str(k)] = [v[0], v[1], int(v[2]), int(v[3])]
+            part = _classify(sp, ids, ref_img is not None)
+            usable = sum(1 for v in part.values() if v[2])
+            # a full sheet with ZERO usable cells usually means the identity
+            # match was too strict - retry once without the reference photo
+            if ref_img is not None and usable == 0 and len(part) >= 10:
+                part2 = _classify(sp, ids, False)
+                if sum(1 for v in part2.values() if v[2]) > 0:
+                    part = part2
+            tags.update(part)
         except Exception as e:
             logs.log(f"  vision sheet {i} failed: {e}", "error")
         if progress_cb:
             progress_cb(40 + 60 * (i + 1) / len(sheet_paths),
                         f"classified sheet {i + 1}/{len(sheet_paths)}")
-    settings.VISION_TAGS.write_text(json.dumps(tags))
+        time.sleep(2.0)                       # stay under free-tier RPM
+    out = {"__version__": TAGS_VERSION}
+    out.update(tags)
+    settings.VISION_TAGS.write_text(json.dumps(out))
     usable = sum(1 for v in tags.values() if v[2])
     logs.log(f"vision: {len(tags)} scenes classified, {usable} usable "
-             f"({len(tags) - usable} graphics/junk excluded)")
+             f"({len(tags) - usable} rejected: wrong person / junk / "
+             f"low quality)")
     return len(tags)

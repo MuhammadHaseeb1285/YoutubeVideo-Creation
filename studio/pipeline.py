@@ -142,7 +142,8 @@ def generate(params: dict) -> dict:
         from . import vision
         try:
             vision.auto_tag(name or "the subject", coach,
-                            progress_cb=lambda p, d: logs.progress(p, d))
+                            progress_cb=lambda p, d: logs.progress(p, d),
+                            hint=params.get("_ctype", ""))
         except vision.NoVisionKey:
             logs.log("no Gemini key found - matching footage by FILENAME "
                      "only, so sync will be approximate. Add a free Gemini "
