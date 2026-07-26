@@ -24,7 +24,7 @@ from pathlib import Path
 
 from . import settings, logs
 
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 COLS, ROWS = 4, 5
 CELL_W, CELL_H = 320, 180
 PER_SHEET = COLS * ROWS
