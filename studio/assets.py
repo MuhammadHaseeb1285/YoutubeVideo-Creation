@@ -83,13 +83,18 @@ def download_from_urls(urls: list, slug: str = "manual") -> int:
 def _search_ids(query: str, n: int = 6) -> list:
     """IDs of the top n YouTube results for a query (fast, no download)."""
     try:
+        # Increase timeout to 240s (yt-dlp can be slow on first run or with network delays)
         r = subprocess.run(
             ["yt-dlp", "--flat-playlist", "--print", "id",
              f"ytsearch{n}:{query}"],
-            capture_output=True, text=True, timeout=90)
+            capture_output=True, text=True, timeout=240)
         return [l.strip() for l in (r.stdout or "").splitlines()
                 if l.strip()]
-    except Exception:
+    except subprocess.TimeoutExpired:
+        logs.log(f"  search timeout for: {query}", "warn")
+        return []
+    except Exception as e:
+        logs.log(f"  search error: {e}", "warn")
         return []
 
 

@@ -81,16 +81,18 @@ def fetch_pexels_images(query: str, count: int = 5) -> int:
     return got
 
 
-def auto_search_youtube(subject_name: str, coach: str = "", ctype: str = "public figure") -> int:
+def auto_search_youtube(subject_name: str, coach: str = "", ctype: str = "public figure", timeout: int = 240) -> int:
     """
     Auto-search YouTube for celebrity fitness videos.
 
     Uses intelligent queries based on celebrity type and coach info.
     Downloads 5-8 high-quality videos automatically.
+
+    timeout: seconds per search (default 240 = 4 min, yt-dlp can be slow)
     """
     from . import assets  # Use existing downloader
 
-    logs.log(f"[AUTO-SEARCH] Searching YouTube for {subject_name} fitness videos...")
+    logs.log(f"[AUTO-SEARCH] Searching YouTube for {subject_name} fitness videos (timeout={timeout}s)...")
 
     # Build smart search queries
     queries = []
