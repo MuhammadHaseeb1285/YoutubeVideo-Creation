@@ -141,24 +141,33 @@ def generate(params: dict) -> dict:
             except Exception as e:
                 logs.log(f"manual URL download failed: {e}", "error")
 
-        # Also do intelligent auto-search for supplementary content
+        # YouTube auto-search (only if download enabled)
         if want_dl and name:
             ctype = params.get("_ctype", "public figure")
             if manual_urls:
-                logs.log("supplementing with auto-search + Pexels...")
+                logs.log("supplementing with auto-search...")
             else:
-                logs.log("searching YouTube + Pexels for all footage...")
+                logs.log("searching YouTube for all footage...")
 
             try:
                 from . import assets_enhanced as AE
-                # Intelligent download: YouTube auto-search + Pexels videos + Pexels images
-                AE.intelligent_download(name, coach, ctype)
-                logs.log("✓ Intelligent media sourcing complete")
+                # YouTube auto-search only
+                AE.auto_search_youtube(name, coach, ctype)
+                logs.log("✓ YouTube auto-search complete")
             except ImportError:
                 # Fallback to old system
                 logs.log("enhanced assets unavailable, using standard download")
                 assets.download(research.build_queries(name, coach, slug, ctype),
                                subject=name)
+
+        # ALWAYS fetch Pexels (even if download disabled) - supplement existing footage
+        logs.log("fetching Pexels media as supplement...")
+        try:
+            from . import assets_enhanced as AE
+            AE.fetch_supplementary_media(name, coach)
+            logs.log("✓ Pexels media fetched")
+        except Exception as e:
+            logs.log(f"Pexels fetch: {e}")
 
         inv = assets.inventory()
         logs.metric("assets", inv)
