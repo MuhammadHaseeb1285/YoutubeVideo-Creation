@@ -94,48 +94,48 @@ def auto_search_youtube(subject_name: str, coach: str = "", ctype: str = "public
 
     logs.log(f"[AUTO-SEARCH] Searching YouTube for {subject_name} fitness videos (timeout={timeout}s)...")
 
-    # Build smart search queries
+    # Build smart search queries (as tuples: (query, stem))
     queries = []
 
     if coach:
         # If coach known, search for coach + celebrity combination
         queries.extend([
-            f"{subject_name} {coach} workout",
-            f"{subject_name} training with {coach}",
-            f"{subject_name} fitness routine",
+            (f"{subject_name} {coach} workout", f"{subject_name.lower()}_coach_workout"),
+            (f"{subject_name} training with {coach}", f"{subject_name.lower()}_coach_train"),
+            (f"{subject_name} fitness routine", f"{subject_name.lower()}_routine"),
         ])
 
     # Base queries for any celebrity
     queries.extend([
-        f"{subject_name} gym workout",
-        f"{subject_name} transformation",
-        f"{subject_name} training routine",
-        f"{subject_name} diet nutrition",
-        f"{subject_name} fitness interview",
-        f"{subject_name} body transformation",
-        f"{subject_name} behind the scenes training",
+        (f"{subject_name} gym workout", f"{subject_name.lower()}_gym"),
+        (f"{subject_name} transformation", f"{subject_name.lower()}_transform"),
+        (f"{subject_name} training routine", f"{subject_name.lower()}_train"),
+        (f"{subject_name} diet nutrition", f"{subject_name.lower()}_diet"),
+        (f"{subject_name} fitness interview", f"{subject_name.lower()}_interview"),
+        (f"{subject_name} body transformation", f"{subject_name.lower()}_body"),
+        (f"{subject_name} behind the scenes training", f"{subject_name.lower()}_bts"),
     ])
 
     # If it's an actor/public figure, add movie-prep queries
     if ctype.lower() in ["actor", "movie", "public figure"]:
         queries.extend([
-            f"{subject_name} movie role preparation training",
-            f"{subject_name} film prep workout",
+            (f"{subject_name} movie role preparation training", f"{subject_name.lower()}_movie_prep"),
+            (f"{subject_name} film prep workout", f"{subject_name.lower()}_film"),
         ])
 
     # If it's a fitness creator, add specific queries
     if ctype.lower() in ["fitness creator", "bodybuilder", "athlete"]:
         queries.extend([
-            f"{subject_name} official channel workout",
-            f"{subject_name} training split",
-            f"{subject_name} IFBB prep",
+            (f"{subject_name} official channel workout", f"{subject_name.lower()}_official"),
+            (f"{subject_name} training split", f"{subject_name.lower()}_split"),
+            (f"{subject_name} IFBB prep", f"{subject_name.lower()}_ifbb"),
         ])
 
     # Download from all queries
     total_downloaded = 0
-    for q in queries:
+    for q, stem in queries:
         try:
-            got = assets.download([q], per_query=2, subject=subject_name)
+            got = assets.download([(q, stem)], per_query=2, subject=subject_name)
             if got > 0:
                 total_downloaded += got
                 logs.log(f"  ✓ {q}: {got} videos")

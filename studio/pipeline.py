@@ -266,8 +266,7 @@ def generate(params: dict) -> dict:
                 pexels_list = [p for p in settings.ASSETS_PEXELS.glob("*.mp4")]
                 if pexels_list:
                     logs.log(f"Using {len(pexels_list)} Pexels videos as supplement")
-                    # Index Pexels videos
-                    from . import indexer
+                    # Index Pexels videos (indexer already imported at top)
                     pexels_indexed = indexer.index_videos_in_folder(settings.ASSETS_PEXELS)
                     pexels_shots = indexer.build_shot_db_from_indexed(pexels_indexed)
             except Exception as e:
