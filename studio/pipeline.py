@@ -121,16 +121,45 @@ def generate(params: dict) -> dict:
                "settings": st}
         settings.save_config(cfg)
 
-        # 2 - FOOTAGE (only when asked to fetch by name)
+        # 2 - FOOTAGE (manual URLs + auto-search + Pexels)
         logs.stage(2, len(STAGES), "Footage")
-        # Fetch footage whenever we have a name to search - in ANY mode
-        # (paste-script / URL / audio included) - unless explicitly disabled.
+
+        # Check for manually-provided video URLs
+        manual_urls = (params.get("video_urls") or "").strip().split("\n")
+        manual_urls = [u.strip() for u in manual_urls if u.strip()]
+
         want_dl = params.get("download")
         if want_dl is None:
             want_dl = bool(name)
+
+        if manual_urls and want_dl:
+            # User provided direct links - ALWAYS download these first
+            logs.log(f"downloading {len(manual_urls)} user-provided URL(s)...")
+            try:
+                assets.download_from_urls(manual_urls, slug)
+                logs.log(f"✓ Downloaded {len(manual_urls)} manual URLs")
+            except Exception as e:
+                logs.log(f"manual URL download failed: {e}", "error")
+
+        # Also do intelligent auto-search for supplementary content
         if want_dl and name:
             ctype = params.get("_ctype", "public figure")
-            assets.download(research.build_queries(name, coach, slug, ctype))
+            if manual_urls:
+                logs.log("supplementing with auto-search + Pexels...")
+            else:
+                logs.log("searching YouTube + Pexels for all footage...")
+
+            try:
+                from . import assets_enhanced as AE
+                # Intelligent download: YouTube auto-search + Pexels videos + Pexels images
+                AE.intelligent_download(name, coach, ctype)
+                logs.log("✓ Intelligent media sourcing complete")
+            except ImportError:
+                # Fallback to old system
+                logs.log("enhanced assets unavailable, using standard download")
+                assets.download(research.build_queries(name, coach, slug, ctype),
+                               subject=name)
+
         inv = assets.inventory()
         logs.metric("assets", inv)
         logs.log(f"assets: {inv['videos']} videos, {inv['images']} images")
@@ -139,11 +168,20 @@ def generate(params: dict) -> dict:
         # with Gemini Vision so footage matches the narration for real).
         logs.stage(3, len(STAGES), "Indexing")
         indexer.index_videos(progress_cb=lambda p, d: logs.progress(p, d))
+
+        # Check which filtering mode is active
+        try:
+            from . import clip_filter_enhanced
+            logs.log("using ENHANCED filtering (Gemini Vision + text detection)")
+        except ImportError:
+            logs.log("using standard filtering")
+
         from . import vision
         try:
             vision.auto_tag(name or "the subject", coach,
                             progress_cb=lambda p, d: logs.progress(p, d),
-                            hint=params.get("_ctype", ""))
+                            hint=params.get("_ctype", ""),
+                            image_url=params.get("image_url", ""))
         except vision.NoVisionKey:
             logs.log("no Gemini key found - matching footage by FILENAME "
                      "only, so sync will be approximate. Add a free Gemini "
@@ -167,32 +205,94 @@ def generate(params: dict) -> dict:
         if mode == "audio":
             logs.log("using imported narration (real voice)")
         else:
-            analysis = NP.analyze(tp)
-            key = st.get("narration_profile", "auto")
-            if key == "auto" or key not in NP.PROFILES:
-                key = analysis["recommended"]
-            v, rate, pitch = NP.resolve(key, int(st.get("narration_pace", 0)),
-                                        int(st.get("narration_energy", 0)))
-            if params.get("voice"):                  # explicit override wins
-                v = params["voice"]
-            logs.metric("narration_profile",
-                        {"key": key, "label": NP.PROFILES[key]["label"],
-                         "genre": analysis["genre"], "voice": v,
-                         "rate": rate, "traits": NP.PROFILES[key]["traits"]})
-            logs.log(f"narration profile: {NP.PROFILES[key]['label']} "
-                     f"({analysis['genre']})")
-            narration.make_tts(tp, slug, v, rate, pitch)
+            # Check if intelligent section-based narration requested
+            use_intelligent = params.get("intelligent_narration", False)
+            use_elevenlabs = params.get("professional_voice", False)
+
+            if use_intelligent:
+                # Use enhanced intelligent narration with section-based voices
+                try:
+                    from . import narration_enhanced as NE
+                    NE.make_tts_intelligent(tp, slug, use_elevenlabs=use_elevenlabs,
+                                           progress_cb=lambda p, d: logs.progress(p, d))
+                    logs.log("narration: intelligent section-based voices")
+                    if use_elevenlabs:
+                        logs.log("  using ElevenLabs professional voices")
+                    else:
+                        logs.log("  using Edge-TTS with dynamic rate/pitch per section")
+                except ImportError:
+                    logs.log("intelligent narration unavailable, falling back to standard TTS")
+                    analysis = NP.analyze(tp)
+                    key = st.get("narration_profile", "auto")
+                    if key == "auto" or key not in NP.PROFILES:
+                        key = analysis["recommended"]
+                    v, rate, pitch = NP.resolve(key, int(st.get("narration_pace", 0)),
+                                                int(st.get("narration_energy", 0)))
+                    if params.get("voice"):
+                        v = params["voice"]
+                    narration.make_tts(tp, slug, v, rate, pitch)
+            else:
+                # Standard TTS with single voice
+                analysis = NP.analyze(tp)
+                key = st.get("narration_profile", "auto")
+                if key == "auto" or key not in NP.PROFILES:
+                    key = analysis["recommended"]
+                v, rate, pitch = NP.resolve(key, int(st.get("narration_pace", 0)),
+                                            int(st.get("narration_energy", 0)))
+                if params.get("voice"):                  # explicit override wins
+                    v = params["voice"]
+                logs.metric("narration_profile",
+                            {"key": key, "label": NP.PROFILES[key]["label"],
+                             "genre": analysis["genre"], "voice": v,
+                             "rate": rate, "traits": NP.PROFILES[key]["traits"]})
+                logs.log(f"narration profile: {NP.PROFILES[key]['label']} "
+                         f"({analysis['genre']})")
+                narration.make_tts(tp, slug, v, rate, pitch)
         audio_dur = narration.ffprobe_duration(voiceover)
         logs.metric("narration_dur", round(audio_dur, 1))
         logs.log(f"narration: {int(audio_dur//60)}:{int(audio_dur%60):02d}")
 
-        # 5 - SELECTION & TIMELINE
+        # 5 - SELECTION & TIMELINE (SMART SENTENCE-LEVEL MATCHING)
         logs.stage(5, len(STAGES), "Selection & Timeline")
         sentences = narration.sentence_timeline(tp, audio_dur, coach, name)
         logs.metric("sentences", len(sentences))
-        tl = TL.build(sentences, shots,
-                      progress_cb=lambda p, d: logs.progress(p, d),
-                      max_clip=float(st.get("max_clip", settings.MAX_PIECE)))
+
+        # Get Pexels footage (videos + images converted to clips) as supplementary
+        pexels_shots = []
+        pexels_image_count = 0
+
+        if settings.ASSETS_PEXELS.exists():
+            try:
+                pexels_list = [p for p in settings.ASSETS_PEXELS.glob("*.mp4")]
+                if pexels_list:
+                    logs.log(f"Using {len(pexels_list)} Pexels videos as supplement")
+                    # Index Pexels videos
+                    from . import indexer
+                    pexels_indexed = indexer.index_videos_in_folder(settings.ASSETS_PEXELS)
+                    pexels_shots = indexer.build_shot_db_from_indexed(pexels_indexed)
+            except Exception as e:
+                logs.log(f"Could not load Pexels videos: {e}")
+
+        # Load Pexels images (for variety, overlay potential)
+        if settings.ASSETS_IMAGE.exists():
+            try:
+                pexels_images = [p for p in settings.ASSETS_IMAGE.glob("*.{jpg,png,webp}")]
+                if pexels_images:
+                    pexels_image_count = len(pexels_images)
+                    logs.log(f"Using {pexels_image_count} Pexels images for supplementary content")
+            except Exception as e:
+                logs.log(f"Could not load Pexels images: {e}")
+
+        # Build timeline using smart, sentence-level selection
+        tl = TL.build(
+            sentences,
+            shots,
+            pexels_shots=pexels_shots,
+            subject_name=name,
+            progress_cb=lambda p, d: logs.progress(p, d),
+            max_clip=float(st.get("max_clip", settings.MAX_PIECE))
+        )
+
         logs.metric("timeline_pieces", len(tl))
         events = MG.build_events(sentences, tl, name, coach)
         logs.metric("text_events", len(events))

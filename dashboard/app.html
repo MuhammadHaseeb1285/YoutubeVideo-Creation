@@ -350,7 +350,8 @@ audio{width:100%}
       <div class="head"><h1>Documentary Input</h1><p>Choose how the script is provided — always a workout / transformation documentary.</p></div>
       <div class="card"><h3>Subject</h3><div class="grid g2">
         <div><label class="f">Celebrity name</label><input class="i" id="fName" placeholder="e.g. Chris Hemsworth"></div>
-        <div><label class="f">Coach / trainer (optional)</label><input class="i" id="fCoach" placeholder="e.g. Luke Zocchi"></div></div></div>
+        <div><label class="f">Coach / trainer (optional)</label><input class="i" id="fCoach" placeholder="e.g. Luke Zocchi"></div>
+        <div><label class="f">Reference photo URL (optional)</label><input class="i" id="fImageUrl" placeholder="https://example.com/photo.jpg or leave empty for auto"></div></div></div>
       <div class="card"><h3>Script Source</h3>
         <div class="seg" id="modeSeg">
           <button class="on" data-m="name">By Name</button><button data-m="transcript_text">Paste Script</button>
@@ -366,11 +367,17 @@ audio{width:100%}
         <div class="modebox" data-m="audio"><label class="f">Narration recording (path or URL — local / YouTube / Google Drive)</label>
           <input class="i" id="fAudio" placeholder="D:\\...\\voice.mp3  or  https://drive.google.com/...">
           <div class="hint">Transcribed locally with Whisper. Your real voice is used; every sentence pinned to its spoken time.</div></div></div>
-      <div class="card"><h3>Footage</h3><label class="f">Fetch footage automatically</label>
+      <div class="card"><h3>Footage</h3>
+        <div style="margin-bottom:var(--s5)">
+          <label class="f">Video URLs (optional — paste YouTube links directly)</label>
+          <textarea class="i" id="fVideoUrls" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ&#10;https://www.youtube.com/watch?v=jNQXAC9IVRw&#10;(one URL per line - if provided, skips automated search)" style="height:100px"></textarea>
+          <div class="hint">Paste specific YouTube links you know are good. Avoids search and face-verification delay. Leave empty to use automatic search.</div>
+        </div>
+        <label class="f">Fetch footage automatically (if no URLs above)</label>
         <select class="i" id="fDownload" style="max-width:340px">
           <option value="auto">Auto (download for By-Name)</option><option value="yes">Always download</option>
           <option value="no">Use existing assets only</option></select>
-        <div class="hint">The narration voice adapts to the script's tone (see Narration) — real voices are never cloned.</div></div>
+        <div class="hint">Only used if no video URLs provided above. The narration voice adapts to the script's tone.</div></div>
     </section>
 
     <section class="panel" id="assets">
@@ -522,6 +529,7 @@ function currentSettings(){return{narration_pace:+$('#sPace').value,narration_en
 async function generate(){const m=mode();
   const p={mode:m,name:$('#fName').value.trim(),coach:$('#fCoach').value.trim(),minutes:+$('#fMinutes').value||12,settings:currentSettings()};
   const dl=$('#fDownload').value;p.download=dl==='yes'?true:(dl==='no'?false:undefined);
+  const videoUrls=$('#fVideoUrls').value.trim();if(videoUrls)p.video_urls=videoUrls;
   if(m==='transcript_text')p.transcript_text=$('#fText').value;
   if(m==='transcript_path')p.transcript_path=$('#fPath').value.trim();
   if(m==='transcript_url')p.transcript_url=$('#fUrl').value.trim();

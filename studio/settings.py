@@ -21,7 +21,7 @@ CONFIG = ROOT / "config.json"             # active-project pointer + settings
 # these are (re)assigned by set_project(); declared here for import safety
 PROJECT_SLUG = "default"
 PROJECT_DIR = PROJECTS / PROJECT_SLUG
-ASSETS = ASSETS_VIDEO = ASSETS_IMAGE = ASSETS_AUDIO = None
+ASSETS = ASSETS_VIDEO = ASSETS_IMAGE = ASSETS_AUDIO = ASSETS_PEXELS = None
 CACHE = OUTPUT = TRANSCRIPTS = None
 SHOT_INDEX = SHEETS_MAP = VISION_TAGS = TIMING = TIMELINE = None
 
@@ -29,7 +29,7 @@ SHOT_INDEX = SHEETS_MAP = VISION_TAGS = TIMING = TIMELINE = None
 def set_project(slug: str):
     """Point every data path at projects/<slug>/. Returns the project dir."""
     global PROJECT_SLUG, PROJECT_DIR, ASSETS, ASSETS_VIDEO, ASSETS_IMAGE
-    global ASSETS_AUDIO, CACHE, OUTPUT, TRANSCRIPTS
+    global ASSETS_AUDIO, ASSETS_PEXELS, CACHE, OUTPUT, TRANSCRIPTS
     global SHOT_INDEX, SHEETS_MAP, VISION_TAGS, TIMING, TIMELINE
     PROJECT_SLUG = slug or "default"
     base = PROJECTS / PROJECT_SLUG
@@ -38,6 +38,7 @@ def set_project(slug: str):
     ASSETS_VIDEO = ASSETS / "videos"
     ASSETS_IMAGE = ASSETS / "images"
     ASSETS_AUDIO = ASSETS / "audio"
+    ASSETS_PEXELS = ASSETS / "pexels"
     CACHE = base / "cache"
     OUTPUT = base / "output"
     TRANSCRIPTS = base / "transcripts"

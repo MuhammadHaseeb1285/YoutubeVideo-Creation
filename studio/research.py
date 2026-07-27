@@ -189,44 +189,64 @@ def research_subject(name: str) -> dict:
 # ------------------------------------------------------------ footage queries
 def build_queries(name: str, coach: str, slug: str,
                   ctype: str = "public figure") -> list:
-    """Footage searches for a fitness / body-transformation documentary:
-    the subject training, their physique across roles, interviews about
-    fitness, and the coach - plus a few type-specific project searches so
-    the film can show the moments that required each transformation."""
+    """Footage searches for a fitness / body-transformation documentary.
+    Uses SPECIFIC, TARGETED searches (always include celebrity name + context)
+    to avoid reaction videos, scams, and low-quality content. Each search is
+    crafted to pull real footage of the subject training, their physique,
+    interviews about fitness, and their coach if known."""
     q = [
+        # GYM / TRAINING - SPECIFIC, CONTEXTUAL
         (f"{name} workout training routine", f"{slug}_gym_a"),
         (f"{name} gym training session", f"{slug}_gym_b"),
-        (f"{name} body transformation journey", f"{slug}_gym_c"),
-        (f"{name} physique bodybuilding", f"{slug}_gym_d"),
-        (f"{name} lifting weights gym", f"{slug}_gym_e"),
+        (f"{name} physique transformation explained", f"{slug}_gym_c"),
+        (f"{name} training montage", f"{slug}_gym_d"),
+        (f"{name} gym floor training", f"{slug}_gym_e"),
+        (f"{name} strength training weights", f"{slug}_gym_f"),
+        (f"{name} bodybuilding fitness", f"{slug}_gym_g"),
+        # BEHIND THE SCENES / AUTHENTIC CONTENT
         (f"{name} training behind the scenes", f"{slug}_bts_a"),
         (f"{name} transformation before after", f"{slug}_bts_b"),
-        (f"{name} interview fitness training", f"{slug}_int_a"),
-        (f"{name} interview", f"{slug}_int_b"),
-        (f"{name} podcast", f"{slug}_int_d"),
-        (f"{name} motivational speech fitness", f"{slug}_int_e"),
-        (f"{name} diet nutrition what he eats", f"{slug}_diet_a"),
+        (f"{name} authentic fitness footage", f"{slug}_bts_c"),
+        (f"{name} real gym session", f"{slug}_bts_d"),
+        # INTERVIEWS ABOUT FITNESS (NOT GOSSIP)
+        (f"{name} interview body transformation", f"{slug}_int_a"),
+        (f"{name} interview about fitness", f"{slug}_int_b"),
+        (f"{name} interview training routine", f"{slug}_int_c"),
+        (f"{name} podcast fitness", f"{slug}_int_d"),
+        (f"{name} talking about working out", f"{slug}_int_e"),
+        # PHYSIQUE / AESTHETIC CONTENT
+        (f"{name} shirtless physique", f"{slug}_phys_a"),
+        (f"{name} body transformation story", f"{slug}_phys_b"),
+        # DIET / NUTRITION
+        (f"{name} diet nutrition what eats", f"{slug}_diet_a"),
         (f"{name} meal prep diet plan", f"{slug}_diet_b"),
-        (f"{name} shirtless abs physique", f"{slug}_phys_a"),
+        (f"{name} eating healthy nutrition", f"{slug}_diet_c"),
+        (f"{name} fitness nutrition advice", f"{slug}_diet_d"),
     ]
+    # TYPE-SPECIFIC SEARCHES
     extra = {
-        "actor": [(f"{name} movie role training", f"{slug}_bts_c"),
-                  (f"{name} shirtless movie scene", f"{slug}_film_a"),
-                  (f"{name} red carpet", f"{slug}_int_c")],
-        "athlete": [(f"{name} training session", f"{slug}_gym_e"),
-                    (f"{name} highlights", f"{slug}_film_a"),
-                    (f"{name} workout", f"{slug}_gym_f")],
-        "musician": [(f"{name} tour rehearsal fitness", f"{slug}_bts_c"),
-                     (f"{name} live performance", f"{slug}_film_a")],
-        "youtuber": [(f"{name} fitness challenge", f"{slug}_gym_e"),
-                     (f"{name} body transformation video", f"{slug}_bts_c"),
-                     (f"{name} podcast", f"{slug}_int_c")],
-        "entrepreneur": [(f"{name} fitness routine", f"{slug}_gym_e"),
-                         (f"{name} interview health", f"{slug}_int_c")],
+        "actor": [(f"{name} movie training preparation", f"{slug}_film_a"),
+                  (f"{name} film role physique", f"{slug}_film_b"),
+                  (f"{name} red carpet event", f"{slug}_event_a")],
+        "athlete": [(f"{name} training season", f"{slug}_athl_a"),
+                    (f"{name} competition preparation", f"{slug}_athl_b"),
+                    (f"{name} performance highlight", f"{slug}_athl_c")],
+        "musician": [(f"{name} concert rehearsal fitness", f"{slug}_music_a"),
+                     (f"{name} tour preparation", f"{slug}_music_b")],
+        "youtuber": [(f"{name} channel gym workout", f"{slug}_yt_a"),
+                     (f"{name} channel fitness video", f"{slug}_yt_b"),
+                     (f"{name} body transformation series", f"{slug}_yt_c"),
+                     (f"{name} channel training routine", f"{slug}_yt_d"),
+                     (f"{name} fitness challenge", f"{slug}_yt_e"),
+                     (f"{name} channel physique", f"{slug}_yt_f")],
+        "entrepreneur": [(f"{name} fitness routine executive", f"{slug}_ent_a"),
+                         (f"{name} health wellness lifestyle", f"{slug}_ent_b")],
     }
-    q += extra.get(ctype, [(f"{name} training", f"{slug}_gym_e"),
-                           (f"{name} public appearance", f"{slug}_int_c")])
+    q += extra.get(ctype, [(f"{name} personal training", f"{slug}_extra_a"),
+                           (f"{name} fitness tips", f"{slug}_extra_b")])
+    # COACH-SPECIFIC (if known)
     if coach:
         q += [(f"{coach} trains {name}", f"{slug}_coach_a"),
-              (f"{coach} trainer interview", f"{slug}_coach_b")]
+              (f"{coach} coaching session", f"{slug}_coach_b"),
+              (f"{coach} trainer methodology", f"{slug}_coach_c")]
     return q

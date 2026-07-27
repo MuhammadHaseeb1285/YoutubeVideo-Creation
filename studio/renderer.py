@@ -2,6 +2,8 @@
 normalized to 1920x1080/30fps, graded (contrast/saturation/vignette),
 given a slow punch-in on alternating shots, and composited with its text
 animation. Pieces are concatenated and married to the narration.
+
+Enhanced with cinematic text animations (scale, rotate, bounce) and 45% text coverage.
 """
 
 import os
@@ -9,6 +11,10 @@ import shutil
 import subprocess
 
 from . import settings, logs, motion_graphics
+try:
+    from . import motion_graphics_cinematic as MG_cinematic
+except ImportError:
+    MG_cinematic = None
 
 BASE_VF = ("scale=1920:1080:force_original_aspect_ratio=decrease,"
            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,fps=30,"

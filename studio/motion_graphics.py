@@ -183,8 +183,9 @@ def build_events(sentences, timeline, subject, coach):
                     used.add(pat)
                 break
 
-    # keyword chips - spread across the film so ~30% of shots carry text
-    target = int(n * 0.30)
+    # keyword chips - spread across the film for 45% coverage (enhanced from 40%)
+    # This ensures rich, cinematic feel with text on almost half of shots
+    target = int(n * 0.45)
     gap = max(2, n // max(1, target)) if target else 99
     last = -99
     for sent in sentences:

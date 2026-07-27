@@ -65,9 +65,10 @@ def _photo_is_portrait(img_path, subject, client):
         return True     # if validation fails, don't block the pipeline
 
 
-def _subject_photo(subject: str, hint: str = "", client=None):
+def _subject_photo(subject: str, hint: str = "", client=None, image_url: str = ""):
     """Download a verified reference photo of the celebrity (their visual
-    profile). Wikipedia lead image first, then Bing image results with a
+    profile). If image_url provided, use that; else Wikipedia lead image,
+    YouTube channel avatar, DuckDuckGo, then Bing image results with a
     profession-qualified query; each candidate is validated as a real
     portrait before being accepted."""
     out = settings.CACHE / "subject_ref.jpg"
@@ -76,6 +77,8 @@ def _subject_photo(subject: str, hint: str = "", client=None):
     import requests
     ua = {"User-Agent": "DocumentaryStudio/1.0"}
     urls = []
+    if image_url:
+        urls.append(image_url)
     try:
         r = requests.get(
             "https://en.wikipedia.org/api/rest_v1/page/summary/"
@@ -312,7 +315,7 @@ The ids on this sheet are: {ids}
 Return ONLY a JSON object mapping each id (as a string) to its 4-item array."""
 
 
-def auto_tag(subject, coach="", progress_cb=None, hint=""):
+def auto_tag(subject, coach="", progress_cb=None, hint="", image_url: str = ""):
     """Classify every scene's real content with Gemini. Writes
     vision_tags.json. Returns the number of scenes tagged."""
     key = _key()
@@ -346,7 +349,7 @@ def auto_tag(subject, coach="", progress_cb=None, hint=""):
     if not sheet_paths:
         raise RuntimeError("no scenes to classify")
     client = genai.Client(api_key=key)
-    ref_path = _subject_photo(subject, hint, client)
+    ref_path = _subject_photo(subject, hint, client, image_url)
     ref_img = Image.open(ref_path) if ref_path else None
 
     def _classify(sp, ids, use_ref):
