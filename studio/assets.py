@@ -16,7 +16,7 @@ from . import settings, logs
 # Prefer real HD (up to 1080p), merged to mp4. Avoids the old 720p cap so
 # footage is sharp, not blurry/upscaled.
 _HD_FMT = ("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/"
-           "best[height<=1080][ext=mp4]/best[ext=mp4]/best")
+           "best[height<=1080][ext=mp4]/best[height>=360][ext=mp4]/best")
 
 
 def download_from_urls(urls: list, slug: str = "manual") -> int:
@@ -212,8 +212,8 @@ def _download_id(vid: str, out, subject: str = "", ref_image_path=None) -> bool:
     if sz <= 500_000:
         return False
     h = _probe_height(out)
-    if h < 720:
-        logs.log(f"      rejected: {h}p < 720p minimum")
+    if h < 360:
+        logs.log(f"      rejected: {h}p < 360p minimum")
         return False
 
     # CRITICAL: Verify the subject is actually in this video

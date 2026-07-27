@@ -188,7 +188,12 @@ def generate(params: dict) -> dict:
                      "key (gemini_key.txt) for content-accurate sync.",
                      "error")
         except Exception as e:
-            logs.log(f"vision tagging failed ({e}); using filename tags")
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e) or "quota" in str(e).lower():
+                logs.log("Gemini API quota exceeded (free tier limit) - skipping Vision. "
+                         "Continuing with filename-based matching. "
+                         "Upgrade to paid Gemini API for content-accurate sync.", "error")
+            else:
+                logs.log(f"vision tagging failed ({e}); using filename tags")
         shots, dropped = indexer.build_shot_db()
         logs.metric("shots", len(shots))
         logs.log(f"shot database: {len(shots)} shots ({dropped} dropped)")
